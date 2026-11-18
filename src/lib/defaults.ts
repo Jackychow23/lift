@@ -5,7 +5,8 @@ Coming back after 2–3 years without regular lifting. Old barbell numbers from 
 Posture: my neck/head sits too far forward. I want work that strengthens posture in every week.
 Skipping legs for now until the routine is consistent. I don't like squats. I like deadlifts but they take too long to set up.
 Keep setup quick: no power rack, no barbells or plates, and I'd rather avoid the Smith machine.
-If a set feels easy I add reps or a set; if it's too hard I lower the weight. I don't rate difficulty.`;
+If a set feels easy I add reps or a set; if it's too hard I lower the weight. I don't rate difficulty.
+I warm up by doing the workout itself at a lighter weight first, so no separate warm-up.`;
 
 export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',

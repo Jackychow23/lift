@@ -158,11 +158,10 @@ function chinTuckHold(sessions: Session[]): number {
 interface TemplateItem { id: string; sets: number }
 interface TemplateBlock { label: string; kind: PlanBlock['kind']; restSeconds: number; items: TemplateItem[] }
 
-export const TEMPLATES: Record<DayType, { title: string; focus: string; warmup: string; blocks: TemplateBlock[] }> = {
+export const TEMPLATES: Record<DayType, { title: string; focus: string; blocks: TemplateBlock[] }> = {
   A: {
     title: 'Upper A',
     focus: 'Bench + row focus',
-    warmup: 'Two light sets of cable rows, then 10 arm circles each way.',
     blocks: [
       { label: 'Pair A', kind: 'pair', restSeconds: 90, items: [{ id: 'db_bench_press', sets: 3 }, { id: 'seated_cable_row', sets: 3 }] },
       { label: 'Pair B', kind: 'pair', restSeconds: 75, items: [{ id: 'one_arm_db_row', sets: 3 }, { id: 'cable_pushdown', sets: 2 }] },
@@ -172,7 +171,6 @@ export const TEMPLATES: Record<DayType, { title: string; focus: string; warmup: 
   B: {
     title: 'Upper B',
     focus: 'Overhead press + pulldown focus',
-    warmup: 'Two light sets of lat pulldowns, then 10 arm circles each way.',
     blocks: [
       { label: 'Pair A', kind: 'pair', restSeconds: 90, items: [{ id: 'db_shoulder_press', sets: 3 }, { id: 'lat_pulldown', sets: 3 }] },
       { label: 'Pair B', kind: 'pair', restSeconds: 75, items: [{ id: 'rear_delt_fly', sets: 3 }, { id: 'db_hammer_curl', sets: 2 }] },
@@ -228,7 +226,6 @@ export function buildBuiltinPlan(s: AppState, dayType: DayType = nextDayType(s))
     title: t.title,
     focus: t.focus,
     note,
-    warmup: t.warmup,
     blocks
   };
 }
@@ -286,7 +283,6 @@ export function buildBonusPlan(s: AppState): Plan | null {
     title: `Bonus: ${weakest.title.replace(/^Bonus:\s*/, '')}`,
     focus: 'Another go at your weakest day this week',
     note: 'Same targets as the day that went worst. Beat them if you can; it counts toward next week.',
-    warmup: 'Same warm-up as before: two light sets of the first pulling exercise, then arm circles.',
     blocks
   };
 }
@@ -347,7 +343,7 @@ export const setCounts = (session: Session) => {
 
 export interface RawPlanItem { exercise_id: string; sets: number; reps: number; weight: number; hold_seconds?: number; note?: string }
 export interface RawPlanBlock { label: string; kind: string; rest_seconds: number; items: RawPlanItem[] }
-export interface RawPlan { title: string; focus: string; note: string; warmup: string; blocks: RawPlanBlock[] }
+export interface RawPlan { title: string; focus: string; note: string; blocks: RawPlanBlock[] }
 
 /**
  * Keep a plan inside safe, doable bounds no matter what came back:
@@ -396,7 +392,6 @@ export function sanitizePlan(raw: RawPlan, s: AppState, dayType: DayType): Plan 
     title: String(raw.title || TEMPLATES[dayType].title).slice(0, 40),
     focus: String(raw.focus || '').slice(0, 80),
     note: String(raw.note || '').slice(0, 280),
-    warmup: String(raw.warmup || TEMPLATES[dayType].warmup).slice(0, 200),
     blocks
   };
 }

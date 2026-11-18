@@ -13,12 +13,6 @@ const KIND_LABEL = { pair: 'alternate', single: '', finisher: '' } as const;
 export default function PlanList({ plan, onOpen }: { plan: Plan; onOpen?: (exerciseId: string) => void }) {
   return (
     <div className="stack-lg">
-      <div className="stack">
-        <p className="label">Warm-up · 3 min</p>
-        <div className="list">
-          <div className="list-row"><span className="body">{plan.warmup}</span></div>
-        </div>
-      </div>
       {plan.blocks.map((b, bi) => (
         <div className="stack" key={bi}>
           <p className="label">

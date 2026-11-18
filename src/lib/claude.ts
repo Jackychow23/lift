@@ -67,7 +67,8 @@ How the app works:
 - Rest timers run between sets. In a pair he alternates the two exercises (A1, A2, A1, A2…), so each muscle rests about twice the pair's rest time.
 
 Rules for every plan:
-- About 30 minutes: a 3-minute warm-up, two antagonist pairs (a press with a pull) and a short posture finisher. 13–16 working sets total. Pair rest 75–90 s; finisher rest 30–45 s.
+- About 30 minutes: two antagonist pairs (a press with a pull) and a short posture finisher. 13–16 working sets total. Pair rest 75–90 s; finisher rest 30–45 s.
+- No warm-up section. He warms up by doing a lighter set or two of the first exercise in each pair before his working sets (not logged), so put the heaviest lifts first in each pair and don't add separate warm-up exercises.
 - Strength focus: main lifts mostly 5–10 reps; accessories 10–15; posture work 12–20.
 - Posture (forward head): every session includes chin tucks plus one upper-back/rear-shoulder exercise. Across the week, pulling sets should be at least equal to pressing sets.
 - Respect his "about me" notes (e.g. no legs unless switched on, no squats, nothing slow to set up).
@@ -126,12 +127,11 @@ function planTool(settings: Settings, withAssessment: boolean) {
     description: 'Submit the next workout plan.',
     input_schema: {
       type: 'object',
-      required: ['title', 'focus', 'note', 'warmup', 'blocks', ...(withAssessment ? ['assessment'] : [])],
+      required: ['title', 'focus', 'note', 'blocks', ...(withAssessment ? ['assessment'] : [])],
       properties: {
         title: { type: 'string', description: 'Short, e.g. "Upper A"' },
         focus: { type: 'string', description: 'Under 8 words' },
         note: { type: 'string', description: '1–2 sentences to the lifter' },
-        warmup: { type: 'string', description: 'One sentence' },
         blocks: {
           type: 'array',
           items: {

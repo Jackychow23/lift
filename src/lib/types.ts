@@ -69,7 +69,8 @@ export interface Plan {
   title: string;
   focus: string;
   note: string;
-  warmup: string;
+  /** No longer used: he warms up with lighter sets of the first exercise. Kept so old saves still load. */
+  warmup?: string;
   blocks: PlanBlock[];
 }
 

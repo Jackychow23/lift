@@ -105,7 +105,7 @@ describe('guardrails on Claude plans', () => {
     const s = freshState();
     const plan = sanitizePlan(
       {
-        title: 'Upper A', focus: 'x', note: 'n', warmup: 'w',
+        title: 'Upper A', focus: 'x', note: 'n',
         blocks: [
           { label: 'Pair A', kind: 'pair', rest_seconds: 90, items: [
             { exercise_id: 'db_bench_press', sets: 9, reps: 8, weight: 120 },
