@@ -1,0 +1,273 @@
+// Talks to the Claude API straight from the phone. The key stays on the phone.
+import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises';
+import { CALIBRATION_SESSIONS } from './defaults';
+import { finished, isAvailable, isCalibrating, nextDayType, regularCount, sanitizePlan, weekInfo, type RawPlan } from './planner';
+import { allCards, cleanNewCards, recentAccuracy, stats } from './srs';
+import type { AppState, Assessment, DayType, Plan, Settings, SpanishCard } from './types';
+import { daysBetween } from './util';
+
+const API = 'https://api.anthropic.com/v1/messages';
+
+interface ToolUseBlock { type: 'tool_use'; name: string; input: unknown }
+
+async function callClaude(settings: Settings, body: Record<string, unknown>, timeoutMs = 90_000): Promise<{ content: ToolUseBlock[] }> {
+  if (!settings.apiKey) throw new Error('No API key yet. Add one in Settings.');
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': settings.apiKey.trim(),
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({ model: settings.model.trim() || 'claude-sonnet-5-5', ...body }),
+      signal: ctrl.signal
+    });
+    if (!res.ok) {
+      let detail = '';
+      try {
+        const j = await res.json();
+        detail = j?.error?.message ?? '';
+      } catch {
+        /* ignore */
+      }
+      throw new Error(`Claude API ${res.status}${detail ? `: ${detail}` : ''}`);
+    }
+    return await res.json();
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw new Error('Claude took too long to answer. Will retry later.');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function toolInput<T>(resp: { content: ToolUseBlock[] }, name: string): T {
+  const block = resp.content?.find((b) => b.type === 'tool_use' && b.name === name);
+  if (!block) throw new Error('Claude did not return a structured answer.');
+  return block.input as T;
+}
+
+export async function testConnection(settings: Settings): Promise<string> {
+  const resp = await callClaude(settings, { max_tokens: 16, messages: [{ role: 'user', content: 'Reply with the single word: ready' }] }, 30_000);
+  const text = (resp.content as unknown as { type: string; text?: string }[]).find((b) => b.type === 'text')?.text ?? '';
+  return text.trim() || 'Connected';
+}
+
+// ───────── workout plans ─────────
+
+const COACH_SYSTEM = `You are the strength coach inside a personal, offline-first lifting app. You write the lifter's NEXT workout, which stays on his phone until he does it.
+
+How the app works:
+- He logs only weight and reps per set. He does not rate difficulty. When a set feels easy he adds reps or an extra set; when it's too hard he lowers the weight. Read his logs with that in mind: reps above target or extra sets mean "too easy", a lower weight than planned means "too heavy".
+- Dumbbell weights are PER HAND and must come from his dumbbell list. Cable weights are the stack number in his increments. Bodyweight moves use weight 0.
+- Rest timers run between sets. In a pair he alternates the two exercises (A1, A2, A1, A2…), so each muscle rests about twice the pair's rest time.
+
+Rules for every plan:
+- About 30 minutes: a 3-minute warm-up, two antagonist pairs (a press with a pull) and a short posture finisher. 13–16 working sets total. Pair rest 75–90 s; finisher rest 30–45 s.
+- Strength focus: main lifts mostly 5–10 reps; accessories 10–15; posture work 12–20.
+- Posture (forward head): every session includes chin tucks plus one upper-back/rear-shoulder exercise. Across the week, pulling sets should be at least equal to pressing sets.
+- Respect his "about me" notes (e.g. no legs unless switched on, no squats, nothing slow to set up).
+- Only use exercise ids from the list given. Never invent ids.
+- Progress gradually: at most one weight step up from what he last actually lifted (two during calibration if he clearly blew past the target). If he lowered a weight, start from what he used.
+- When a dumbbell exercise reaches his heaviest dumbbell, progress with reps, slower lowering, pauses or the one-arm version instead of weight; say so in the item's note.
+- Calibration: his first ${CALIBRATION_SESSIONS} regular sessions find his working weights. Move faster then.
+- The "note" is 1–2 short sentences to him in plain words, no hype, no emojis. Item notes are optional, under 15 words.`;
+
+function exerciseCatalog(settings: Settings): string {
+  return EXERCISES.filter((e) => isAvailable(e, settings))
+    .map((e) => {
+      const load = e.load === 'dumbbell' ? 'dumbbell, lb per hand' : e.load === 'cable' ? 'cable stack, lb' : 'bodyweight';
+      return `${e.id} | ${e.name} | ${e.pattern} | ${load} | reps ${e.repRange[0]}–${e.repRange[1]}${e.holdSeconds ? ` | hold ${e.holdSeconds}s each rep` : ''}`;
+    })
+    .join('\n');
+}
+
+function historyText(s: AppState, limit = 12): string {
+  const xs = finished(s).slice(-limit);
+  if (!xs.length) return 'No workouts logged yet.';
+  return xs
+    .map((x) => {
+      const head = `${x.finishedAt!.slice(0, 10)} · ${x.title}${x.bonus ? ' (bonus repeat)' : ''} · day ${x.dayType}`;
+      const lines = x.exercises.map((e) => {
+        const t = e.sets[0]?.target;
+        const planned = e.sets.filter((z) => !z.extra).length;
+        const did = e.sets.filter((z) => z.done).map((z) => (z.weight > 0 ? `${z.weight}×${z.reps}` : `${z.reps}`));
+        const skipped = e.sets.filter((z) => !z.done).length;
+        const extra = e.sets.filter((z) => z.extra && z.done).length;
+        return `  ${e.exerciseId}: planned ${planned}×${t?.reps}${t && t.weight > 0 ? ` @ ${t.weight}` : ''}; did ${did.join(', ') || 'nothing'}${skipped ? `; skipped ${skipped}` : ''}${extra ? `; +${extra} extra` : ''}`;
+      });
+      return [head, ...lines].join('\n');
+    })
+    .join('\n');
+}
+
+function postureText(s: AppState): string {
+  const xs = s.posture.slice(-3);
+  if (!xs.length) return 'No posture checks yet.';
+  return xs
+    .map((p) => `${p.date.slice(0, 10)}: neck-flexor hold ${p.neckHoldSeconds ?? '–'} s; wall test ${p.wallTest ?? '–'}`)
+    .join('\n');
+}
+
+export function needsAssessment(s: AppState, now = new Date()): boolean {
+  if (regularCount(s) < CALIBRATION_SESSIONS) return false;
+  if (!s.assessment) return true;
+  return daysBetween(new Date(s.assessment.date), now) >= 28;
+}
+
+function planTool(settings: Settings, withAssessment: boolean) {
+  const ids = EXERCISES.filter((e) => isAvailable(e, settings)).map((e) => e.id);
+  return {
+    name: 'submit_workout',
+    description: 'Submit the next workout plan.',
+    input_schema: {
+      type: 'object',
+      required: ['title', 'focus', 'note', 'warmup', 'blocks', ...(withAssessment ? ['assessment'] : [])],
+      properties: {
+        title: { type: 'string', description: 'Short, e.g. "Upper A"' },
+        focus: { type: 'string', description: 'Under 8 words' },
+        note: { type: 'string', description: '1–2 sentences to the lifter' },
+        warmup: { type: 'string', description: 'One sentence' },
+        blocks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['label', 'kind', 'rest_seconds', 'items'],
+            properties: {
+              label: { type: 'string' },
+              kind: { type: 'string', enum: ['pair', 'single', 'finisher'] },
+              rest_seconds: { type: 'integer' },
+              items: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['exercise_id', 'sets', 'reps', 'weight'],
+                  properties: {
+                    exercise_id: { type: 'string', enum: ids },
+                    sets: { type: 'integer' },
+                    reps: { type: 'integer' },
+                    weight: { type: 'number' },
+                    hold_seconds: { type: 'integer' },
+                    note: { type: 'string' }
+                  }
+                }
+              }
+            }
+          }
+        },
+        ...(withAssessment
+          ? { assessment: { type: 'string', description: 'Weak points and priorities from his numbers so far, 3–5 short sentences, plain words.' } }
+          : {})
+      }
+    }
+  };
+}
+
+export async function requestPlan(s: AppState, opts: { dayType?: DayType } = {}): Promise<{ plan: Plan; assessment: Assessment | null }> {
+  const dayType = opts.dayType ?? nextDayType(s);
+  const withAssessment = needsAssessment(s);
+  const wk = weekInfo(s);
+  const n = regularCount(s);
+  const settings = s.settings;
+  const user = `ABOUT ME (written by the lifter):
+${settings.aboutMe}
+
+EQUIPMENT
+Dumbbells (lb, per hand): ${settings.dumbbells.join(', ')}
+Cable stack: ${settings.cableIncrement} lb steps up to ${settings.cableMax}
+Legs switched ${settings.includeLegs ? 'ON' : 'OFF'}
+
+EXERCISES HE CAN DO (id | name | pattern | load | rep guide)
+${exerciseCatalog(settings)}
+
+STATUS
+Regular sessions done: ${n}${isCalibrating(s) ? ` (calibration: session ${n + 1} of ${CALIBRATION_SESSIONS} is next)` : ''}
+This week: ${wk.regularCount} regular session(s) done.
+Next session should be day ${dayType} (days alternate A/B; A leans on horizontal press/row, B on overhead press/pulldown).
+${s.assessment ? `Current weak-point notes (${s.assessment.date.slice(0, 10)}): ${s.assessment.text}` : 'No weak-point assessment yet.'}
+
+POSTURE CHECKS
+${postureText(s)}
+
+RECENT WORKOUTS (oldest first)
+${historyText(s)}
+
+Write his next workout with submit_workout.${withAssessment ? ' Also include an "assessment": which muscles or lifts look weak relative to the others, and what the plan will prioritise.' : ''}`;
+
+  const resp = await callClaude(settings, {
+    max_tokens: 2000,
+    system: COACH_SYSTEM,
+    tools: [planTool(settings, withAssessment)],
+    tool_choice: { type: 'tool', name: 'submit_workout' },
+    messages: [{ role: 'user', content: user }]
+  });
+  const raw = toolInput<RawPlan & { assessment?: string }>(resp, 'submit_workout');
+  const plan = sanitizePlan(raw, s, dayType);
+  const assessment =
+    withAssessment && typeof raw.assessment === 'string' && raw.assessment.trim()
+      ? { date: new Date().toISOString(), text: raw.assessment.trim().slice(0, 800) }
+      : null;
+  return { plan, assessment };
+}
+
+// ───────── Spanish cards ─────────
+
+const SPANISH_SYSTEM = `You write flashcards for a beginner learning Spanish between sets at the gym. He learns mainly through comprehensible input (Dreaming Spanish), so every card teaches one word or short phrase INSIDE a short, natural sentence. Use Mexican Spanish where it differs. Each sentence must contain the word (or an obvious form of it). Sentences: 3–9 words for level 1–2, up to 12 for level 3+. Give natural English. Topics: gym, body, food, daily life, travel, small talk. No duplicates of words he already has.`;
+
+export async function requestCards(s: AppState, count = 20): Promise<SpanishCard[]> {
+  const st = stats(s.spanish);
+  const acc = recentAccuracy(s.spanish);
+  const known = allCards(s.spanish).map((c) => c.word);
+  const weak = Object.entries(s.spanish.progress)
+    .filter(([, p]) => p.seen >= 3 && p.correct / p.seen < 0.6)
+    .map(([id]) => allCards(s.spanish).find((c) => c.id === id)?.word)
+    .filter(Boolean);
+  const targetLevel = Math.max(1, Math.min(5, st.level + (acc !== null && acc > 0.85 ? 1 : 0)));
+  const user = `He has ${st.seen} words in rotation, ${st.mastered} well learned. Recent accuracy: ${acc === null ? 'not enough data' : Math.round(acc * 100) + '%'}.
+Aim new cards at level ${targetLevel} (1 = very first words, 2 = simple past/near future, 3 = everyday conversation).
+Words he finds hard: ${weak.join(', ') || 'none yet'}. Include a few cards that reuse those words in new sentences, with a different target word.
+Words he already has (do not repeat as targets): ${known.join(', ')}
+
+Write ${count} new cards with add_cards.`;
+  const resp = await callClaude(s.settings, {
+    max_tokens: 3000,
+    system: SPANISH_SYSTEM,
+    tools: [
+      {
+        name: 'add_cards',
+        description: 'Add new flashcards to the deck.',
+        input_schema: {
+          type: 'object',
+          required: ['cards'],
+          properties: {
+            cards: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['word', 'en', 'es', 'sentence_en', 'level', 'category'],
+                properties: {
+                  word: { type: 'string', description: 'Spanish target word/phrase; nouns with article' },
+                  en: { type: 'string', description: 'English meaning of the word' },
+                  es: { type: 'string', description: 'Spanish sentence using the word' },
+                  sentence_en: { type: 'string', description: 'English meaning of the sentence' },
+                  level: { type: 'integer' },
+                  category: { type: 'string', description: 'One word, e.g. body, gym, food, verb, time, travel' }
+                }
+              }
+            }
+          }
+        }
+      }
+    ],
+    tool_choice: { type: 'tool', name: 'add_cards' },
+    messages: [{ role: 'user', content: user }]
+  });
+  const raw = toolInput<{ cards: unknown }>(resp, 'add_cards');
+  return cleanNewCards(raw.cards, s.spanish);
+}
+
+export const exerciseName = (id: string) => EXERCISE_BY_ID[id]?.name ?? id;
