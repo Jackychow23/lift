@@ -3,6 +3,7 @@ import { EXERCISE_BY_ID, EXERCISES } from '../data/exercises';
 import { BASE_DECK } from '../data/spanish';
 import { freshState, migrate } from './defaults';
 import {
+  alternatives,
   buildBonusPlan,
   buildBuiltinPlan,
   nextDayType,
@@ -13,6 +14,7 @@ import {
   sanitizePlan,
   sharedStation,
   startSession,
+  station,
   weekInfo
 } from './planner';
 import { answer, buildQuestion, cleanStories, contextsFor, findHighlight, nextQuestion, pickCard, stats } from './srs';
@@ -41,13 +43,13 @@ describe('exercise library', () => {
 });
 
 describe('built-in planner', () => {
-  it('starts on day A with conservative weights and ~15 sets, no legs', () => {
+  it('starts on day A with conservative weights and ~12 sets, no legs', () => {
     const s = freshState();
     const p = buildBuiltinPlan(s);
     expect(p.dayType).toBe('A');
     const sets = p.blocks.flatMap((b) => b.items).reduce((n, i) => n + i.sets, 0);
-    expect(sets).toBeGreaterThanOrEqual(13);
-    expect(sets).toBeLessThanOrEqual(16);
+    expect(sets).toBeGreaterThanOrEqual(10);
+    expect(sets).toBeLessThanOrEqual(14);
     const bench = p.blocks[0].items.find((i) => i.exerciseId === 'db_bench_press')!;
     expect(bench.weight).toBe(30);
     expect(p.blocks.flatMap((b) => b.items).some((i) => EXERCISE_BY_ID[i.exerciseId].legs)).toBe(false);
@@ -103,14 +105,26 @@ describe('built-in planner', () => {
     for (const b of p.blocks) if (b.items.length > 1) expect(sharedStation(b.items.map((i) => i.exerciseId))).not.toBeNull();
   });
 
-  it('keeps every pair on one station (dumbbells or cable)', () => {
-    let s = freshState();
+  it('one exercise at a time, dumbbells before cables, longer rests for main lifts, no floor work', () => {
+    const s = freshState();
     for (const day of ['A', 'B'] as const) {
       const p = buildBuiltinPlan(s, day);
-      for (const b of p.blocks) if (b.items.length > 1) expect(sharedStation(b.items.map((i) => i.exerciseId))).not.toBeNull();
+      expect(p.blocks.every((b) => b.items.length === 1)).toBe(true);
+      const stations = p.blocks.map((b) => station(EXERCISE_BY_ID[b.items[0].exerciseId])).filter((x) => x !== 'anywhere');
+      expect(stations.indexOf('cable')).toBeGreaterThan(stations.lastIndexOf('dumbbells'));
+      expect(p.blocks[0].restSeconds).toBeGreaterThanOrEqual(120);
+      expect(p.blocks.some((b) => EXERCISE_BY_ID[b.items[0].exerciseId].floor)).toBe(false);
     }
-    s = logSession(s, () => {});
-    expect(buildBuiltinPlan(s).blocks.length).toBe(3);
+  });
+
+  it('swap options always include cable ones, and leave out floor work unless allowed', () => {
+    const s = freshState();
+    for (const id of ['db_bench_press', 'db_shoulder_press', 'one_arm_db_row', 'db_hammer_curl', 'db_overhead_triceps', 'rear_delt_fly']) {
+      expect(alternatives(id, s.settings).some((e) => e.load === 'cable')).toBe(true);
+    }
+    expect(alternatives('db_bench_press', s.settings).map((e) => e.id)).not.toContain('push_up');
+    s.settings.allowFloor = true;
+    expect(alternatives('db_bench_press', s.settings).map((e) => e.id)).toContain('push_up');
   });
 });
 
@@ -137,15 +151,35 @@ describe('guardrails on Claude plans', () => {
       'A'
     );
     const items = plan.blocks.flatMap((b) => b.items);
+    expect(plan.blocks.every((b) => b.items.length === 1)).toBe(true);
     expect(items.map((i) => i.exerciseId)).not.toContain('made_up');
     expect(items.some((i) => EXERCISE_BY_ID[i.exerciseId].legs)).toBe(false);
     const bench = items.find((i) => i.exerciseId === 'db_bench_press')!;
     expect(bench.sets).toBe(5);
     expect(bench.weight).toBe(40); // start 30 + two notches max during calibration
     expect(items.find((i) => i.exerciseId === 'seated_cable_row')!.weight).toBe(85);
-    // dumbbell + cable "pair" gets split into one-at-a-time blocks; cable + cable stays a pair
-    for (const b of plan.blocks) if (b.items.length > 1) expect(sharedStation(b.items.map((i) => i.exerciseId))).not.toBeNull();
-    expect(plan.blocks.some((b) => b.items.length === 2 && b.items[0].exerciseId === 'lat_pulldown')).toBe(true);
+    // dumbbell work moved ahead of cable work
+    expect(plan.blocks[0].items[0].exerciseId).toBe('db_bench_press');
+  });
+
+  it('accepts the new flat exercise list and drops floor work', () => {
+    const s = freshState();
+    const plan = sanitizePlan(
+      {
+        title: 'Upper A', focus: 'x', note: 'n',
+        exercises: [
+          { exercise_id: 'face_pull', sets: 2, reps: 15, weight: 25, rest_seconds: 45 },
+          { exercise_id: 'push_up', sets: 3, reps: 10, weight: 0, rest_seconds: 90 },
+          { exercise_id: 'db_bench_press', sets: 3, reps: 8, weight: 30, rest_seconds: 150 }
+        ]
+      },
+      s,
+      'A'
+    );
+    const ids = plan.blocks.map((b) => b.items[0].exerciseId);
+    expect(ids.some((id) => EXERCISE_BY_ID[id].floor)).toBe(false); // push-up swapped for a bench stand-in
+    expect(ids[ids.length - 1]).toBe('face_pull'); // cable work moved after the dumbbell work
+    expect(plan.blocks.find((b) => b.items[0].exerciseId === 'db_bench_press')!.restSeconds).toBe(150);
   });
 });
 
@@ -158,12 +192,13 @@ describe('workout flow', () => {
       order.push(`${s.exercises[n.ex].exerciseId}#${n.set}`);
       s.exercises[n.ex].sets[n.set].done = true;
     }
-    expect(order).toEqual(['db_bench_press#0', 'one_arm_db_row#0', 'db_bench_press#1', 'one_arm_db_row#1']);
+    expect(order).toEqual(['db_bench_press#0', 'db_bench_press#1', 'db_bench_press#2', 'one_arm_db_row#0']);
   });
 
-  it('does a two-station block one exercise at a time', () => {
-    const s = startSession(buildBuiltinPlan(freshState()));
-    s.exercises[1].exerciseId = 'seated_cable_row'; // pair 1 is now dumbbell + cable
+  it('an old-style two-station pair is done one exercise at a time', () => {
+    const base = buildBuiltinPlan(freshState());
+    const legacy = { ...base, blocks: [{ label: 'Pair', kind: 'pair' as const, restSeconds: 90, items: [base.blocks[0].items[0], { ...base.blocks[0].items[0], exerciseId: 'seated_cable_row' }] }] };
+    const s = startSession(legacy);
     const order: string[] = [];
     for (let i = 0; i < 4; i++) {
       const n = nextSet(s)!;
@@ -171,6 +206,7 @@ describe('workout flow', () => {
       s.exercises[n.ex].sets[n.set].done = true;
     }
     expect(order).toEqual(['db_bench_press#0', 'db_bench_press#1', 'db_bench_press#2', 'seated_cable_row#0']);
+    expect(sharedStation(['db_bench_press', 'seated_cable_row'])).toBeNull();
   });
 
   it('"cable machine taken" swaps unstarted cable work to dumbbells, and back', () => {
@@ -260,6 +296,20 @@ describe('Spanish cards', () => {
     expect(q.options.every((o) => !/^(el|la) /.test(o))).toBe(true);
     expect(q.optionsLang).toBe('es');
     expect(q.support).toBe(card.sentenceEn);
+  });
+
+  it('never shows the right answer twice, even with a sentence borrowed from another card', () => {
+    const sp = freshState().spanish;
+    const aqui = BASE_DECK.find((c) => c.word === 'aquí')!;
+    const ctx = contextsFor(aqui, sp).find((c) => c.es === '¿Está lejos de aquí?')!;
+    expect(ctx).toBeTruthy();
+    for (let k = 0; k < 30; k++) {
+      const q = buildQuestion(aqui, 'sentence', BASE_DECK, Math.random, ctx);
+      expect(new Set(q.options).size).toBe(4);
+      expect(q.options.filter((o) => o === ctx.en)).toHaveLength(1);
+    }
+    const cuarto = BASE_DECK.find((c) => c.word === 'el cuarto')!;
+    for (let k = 0; k < 30; k++) expect(buildQuestion(cuarto, 'reverse', BASE_DECK).options).not.toContain('la habitación');
   });
 
   it('a right answer after the hint does not move the card up', () => {

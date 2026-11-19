@@ -58,6 +58,7 @@ export const EXERCISES: Exercise[] = [
     pattern: 'h_push',
     load: 'dumbbell',
     needs: [],
+    floor: true,
     repRange: [6, 10],
     start: 30,
     images: img('db_floor_press'),
@@ -100,6 +101,7 @@ export const EXERCISES: Exercise[] = [
     pattern: 'h_push',
     load: 'bodyweight',
     needs: [],
+    floor: true,
     repRange: [8, 20],
     start: 0,
     images: img('push_up'),
@@ -112,6 +114,26 @@ export const EXERCISES: Exercise[] = [
     notFeel: [
       { where: 'Lower back', fix: 'Hips are sagging. Squeeze your glutes and brace your stomach.' },
       { where: 'Neck', fix: 'Head is dropping or poking forward. Keep a long neck, eyes just ahead of your hands.' }
+    ]
+  },
+  {
+    id: 'cable_chest_press',
+    name: 'Standing Cable Chest Press',
+    pattern: 'h_push',
+    load: 'cable',
+    needs: ['d_handle'],
+    repRange: [8, 12],
+    start: 30,
+    images: img('cable_chest_press'),
+    steps: [
+      'Set the handle at chest height and face away from the machine, one foot forward.',
+      'Start with the handle beside your chest, elbow about 45° from your side.',
+      'Press straight forward until your arm is nearly straight, then return slowly. With one handle, do all reps on one arm, then switch.'
+    ],
+    feel: { main: ['Chest'], also: ['Front of shoulder', 'Triceps'] },
+    notFeel: [
+      { where: 'Lower back', fix: 'Leaning into it or arching. Stagger your feet and brace your stomach.' },
+      { where: 'Front of the shoulder', fix: 'Elbow flared high and wide. Keep it about 45° from your side.' }
     ]
   },
   // ───────── Chest accessory ─────────
@@ -175,6 +197,45 @@ export const EXERCISES: Exercise[] = [
     notFeel: [
       { where: 'Lower back', fix: 'Leaning sideways or back. Lighter weight and brace harder.' },
       { where: 'Neck', fix: 'Shrugging. Keep the working shoulder down.' }
+    ]
+  },
+  {
+    id: 'cable_shoulder_press',
+    name: 'Cable Shoulder Press',
+    pattern: 'v_push',
+    load: 'cable',
+    needs: ['d_handle'],
+    repRange: [8, 12],
+    start: 25,
+    images: img('cable_shoulder_press'),
+    steps: [
+      'Handle on the lowest setting. Stand or kneel facing away, handle at shoulder height, palm forward.',
+      'Brace your stomach and press up and slightly forward until your arm is nearly straight.',
+      'Lower back to shoulder height. Do all reps on one arm, then switch.'
+    ],
+    feel: { main: ['Shoulder'], also: ['Triceps', 'Upper chest'] },
+    notFeel: [
+      { where: 'Lower back', fix: 'Leaning back to finish. Brace and use less weight.' },
+      { where: 'Neck or top of the traps', fix: 'Shrugging as you press. Keep the shoulder down.' }
+    ]
+  },
+  {
+    id: 'cable_lateral_raise',
+    name: 'Cable Lateral Raise',
+    pattern: 'shoulders',
+    load: 'cable',
+    needs: ['d_handle'],
+    repRange: [10, 15],
+    start: 10,
+    images: img('cable_lateral_raise'),
+    steps: [
+      'Handle on the lowest setting. Stand side-on and hold it with the far hand, cable across your body.',
+      'Raise your arm out to the side, slight bend in the elbow, up to shoulder height.',
+      'Lower slowly. Do all reps, then switch sides.'
+    ],
+    feel: { main: ['Side of the shoulder'], also: [] },
+    notFeel: [
+      { where: 'Neck or top of the traps', fix: 'Shrugging the weight up. Think long neck; stop at shoulder height.' }
     ]
   },
   {
@@ -318,6 +379,26 @@ export const EXERCISES: Exercise[] = [
     notFeel: [
       { where: 'Lower back', fix: 'Back is rounding or you are standing up as you row. Brace, keep the hinge still, go lighter.' },
       { where: 'Neck', fix: 'Looking up at the mirror. Keep your eyes on the floor a little ahead of you.' }
+    ]
+  },
+  {
+    id: 'cable_one_arm_row',
+    name: 'One-Arm Cable Row',
+    pattern: 'h_pull',
+    load: 'cable',
+    needs: ['d_handle'],
+    repRange: [8, 12],
+    start: 35,
+    images: img('cable_one_arm_row'),
+    steps: [
+      'Single handle on a low or middle setting. Sit or stand tall facing the machine.',
+      'Pull the handle to your side, elbow close to your body, squeezing your shoulder blade back.',
+      'Let the arm reach forward without twisting your torso. Do all reps, then switch.'
+    ],
+    feel: { main: ['Middle back', 'Lats'], also: ['Biceps', 'Rear shoulder'] },
+    notFeel: [
+      { where: 'Lower back', fix: 'Twisting to finish the rep. Keep your chest facing the machine.' },
+      { where: 'Mostly biceps', fix: 'Pulling with the hand. Lead with the elbow.' }
     ]
   },
   // ───────── Vertical pull ─────────
@@ -542,6 +623,26 @@ export const EXERCISES: Exercise[] = [
     notFeel: [
       { where: 'Neck', fix: 'Looking up. Keep your eyes on the floor and neck long.' },
       { where: 'Lower back', fix: 'Jerking the weight up. Go lighter and slower.' }
+    ]
+  },
+  {
+    id: 'cable_rear_delt_fly',
+    name: 'Cable Rear Delt Fly',
+    pattern: 'posture',
+    load: 'cable',
+    needs: ['d_handle'],
+    repRange: [12, 20],
+    start: 10,
+    images: img('cable_rear_delt_fly'),
+    steps: [
+      'Handle at about shoulder height. Stand side-on and hold it with the far hand, arm across your chest.',
+      'Keeping a slight bend in the elbow, sweep your arm out and back to shoulder level.',
+      'Return slowly. Do all reps, then switch sides.'
+    ],
+    feel: { main: ['Rear shoulder'], also: ['Upper back between the shoulder blades'] },
+    notFeel: [
+      { where: 'Neck or top of the traps', fix: 'Shrugging. Keep the shoulder down and the neck long.' },
+      { where: 'Lower back', fix: 'Twisting your torso. Stay square and go lighter.' }
     ]
   },
   {

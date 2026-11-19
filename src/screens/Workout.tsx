@@ -7,8 +7,8 @@ import Sheet from '../components/Sheet';
 import { EXERCISE_BY_ID } from '../data/exercises';
 import { keepScreenOn, primeAudio, rearmOnVisible } from '../lib/device';
 import { useNow } from '../lib/hooks';
-import { alternatives, blockExercises, cableSwap, finished, isCalibrating, lastLogFor, nextSet, nextTarget, setCounts } from '../lib/planner';
-import { describeBlocks } from '../components/blocks';
+import { alternatives, blockExercises, cableSwap, finished, isCalibrating, lastLogFor, nextSet, nextTarget, setCounts, station } from '../lib/planner';
+import { GROUP_LABEL, describeBlocks, restText } from '../components/blocks';
 import { useStore } from '../lib/store';
 import type { Session } from '../lib/types';
 import { fmtClock } from '../lib/util';
@@ -170,13 +170,12 @@ export default function Workout({ nav }: { nav: Nav }) {
           const v = views[bi];
           return (
             <div className="stack" key={bi} style={{ gap: 10 }}>
-              <div className="stack" style={{ gap: 2, padding: '0 4px' }}>
-                <div className="between">
-                  <span className="label">{v.title}</span>
-                  <span className="small">{b.restSeconds} s rest between sets</span>
+              {(v.newGroup || v.how) && (
+                <div className="stack" style={{ gap: 2, padding: bi === 0 ? '0 4px' : '8px 4px 0' }}>
+                  {v.newGroup && <span className="label">{GROUP_LABEL[v.station]}</span>}
+                  {v.how && <span className="small">{v.how}</span>}
                 </div>
-                {v.how && <span className="small">{v.how}</span>}
-              </div>
+              )}
               {idx.map((ei, k) => {
                 const log = session.exercises[ei];
                 const ex = EXERCISE_BY_ID[log.exerciseId];
@@ -190,7 +189,7 @@ export default function Workout({ nav }: { nav: Nav }) {
                       <div className="stack" style={{ gap: 2 }}>
                         <h2 className="h2 row" style={{ gap: 8, alignItems: 'flex-start' }}><span className="tag-pill" style={{ marginTop: 1 }}>{tag}</span><span>{ex?.name ?? log.exerciseId}</span></h2>
                         <span className="small">
-                          Target {log.sets.filter((x) => !x.extra).length} × {t?.reps}
+                          {restText(b.restSeconds)} · Target {log.sets.filter((x) => !x.extra).length} × {t?.reps}
                           {log.holdSeconds ? ` · ${log.holdSeconds} s hold` : ''}
                           {!bw && t ? ` · ${t.weight} lb${ex?.load === 'dumbbell' ? ' each hand' : ''}` : ''}
                         </span>
@@ -269,12 +268,21 @@ export default function Workout({ nav }: { nav: Nav }) {
       {swapFor !== null && (
         <Sheet title="Swap exercise" onClose={() => setSwapFor(null)}>
           <p className="small" style={{ margin: 0 }}>Station busy or something feels off? Pick a stand-in that works the same muscles.</p>
-          {alternatives(session.exercises[swapFor].exerciseId, state.settings, session.exercises.map((e) => e.exerciseId)).map((alt) => (
-            <button key={alt.id} type="button" className="sheet-item" onClick={() => swap(swapFor, alt.id)}>
-              <span style={{ fontWeight: 600 }}>{alt.name}</span>
-              <span className="small">{alt.feel.main.join(', ')}</span>
-            </button>
-          ))}
+          {(() => {
+            const alts = alternatives(session.exercises[swapFor].exerciseId, state.settings, session.exercises.map((e) => e.exerciseId));
+            const groups = (['cable', 'dumbbells', 'anywhere'] as const).map((st) => ({ st, list: alts.filter((a) => station(a) === st) })).filter((g) => g.list.length);
+            return groups.map((g) => (
+              <div key={g.st} className="stack">
+                <span className="label">{GROUP_LABEL[g.st]}</span>
+                {g.list.map((alt) => (
+                  <button key={alt.id} type="button" className="sheet-item" onClick={() => swap(swapFor, alt.id)}>
+                    <span style={{ fontWeight: 600 }}>{alt.name}</span>
+                    <span className="small">{alt.feel.main.join(', ')}</span>
+                  </button>
+                ))}
+              </div>
+            ));
+          })()}
         </Sheet>
       )}
 

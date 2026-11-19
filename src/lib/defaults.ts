@@ -26,6 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
     straight_bar: true
   },
   includeLegs: false,
+  allowFloor: false,
   sound: true,
   aboutMe: DEFAULT_ABOUT_ME,
   spanishFocus: DEFAULT_SPANISH_FOCUS

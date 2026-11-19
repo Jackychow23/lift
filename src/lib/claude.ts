@@ -1,7 +1,7 @@
 // Talks to the Claude API straight from the phone. The key stays on the phone.
 import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises';
 import { CALIBRATION_SESSIONS } from './defaults';
-import { finished, isAvailable, isCalibrating, nextDayType, regularCount, sanitizePlan, weekInfo, type RawPlan } from './planner';
+import { finished, isCalibrating, nextDayType, plannable, regularCount, sanitizePlan, weekInfo, type RawPlan } from './planner';
 import { allCards, cleanContexts, cleanNewCards, cleanStories, recentAccuracy, stats } from './srs';
 import type { AppState, Assessment, Context, DayType, Plan, Settings, SpanishCard, Story } from './types';
 import { daysBetween } from './util';
@@ -119,12 +119,15 @@ const COACH_SYSTEM = `You are the strength coach inside a personal, offline-firs
 How the app works:
 - He logs only weight and reps per set. He does not rate difficulty. When a set feels easy he adds reps or an extra set; when it's too hard he lowers the weight. Read his logs with that in mind: reps above target or extra sets mean "too easy", a lower weight than planned means "too heavy".
 - Dumbbell weights are PER HAND and must come from his dumbbell list. Cable weights are the stack number in his increments. Bodyweight moves use weight 0.
-- Rest timers run between sets. In a pair he alternates the two exercises (1a, 1b, 1a, 1b…), so each muscle rests about twice the pair's rest time.
+- He does one exercise at a time (all sets, then the next exercise). A rest timer runs between sets and he studies Spanish flashcards during it, so longer rests are welcome.
 
 Rules for every plan:
-- About 30 minutes: two antagonist pairs (a press with a pull) and a short posture finisher.
-- EQUIPMENT RULE: both exercises in a pair (and in the finisher) must use the same station — both dumbbell, or both cable. Bodyweight moves (chin tucks, push-ups) can go with either. Never pair a cable exercise with a dumbbell one. His gym has a single cable machine that's often busy, so keep all cable work in back-to-back blocks so he only uses it once per workout. Each exercise's load is in the list below. 13–16 working sets total. Pair rest 75–90 s; finisher rest 30–45 s.
-- No warm-up section. He warms up by doing a lighter set or two of the first exercise in each pair before his working sets (not logged), so put the heaviest lifts first in each pair and don't add separate warm-up exercises.
+- One exercise at a time: straight sets, no supersets or pairs. List exercises in the order he does them.
+- About 30–35 minutes: usually 4–6 exercises and 10–14 working sets. He trains upper body 4–5 days a week, so each session doesn't need to do everything.
+- Rest (rest_seconds per exercise): 120–180 s for main presses and pulls, 60–90 s for accessories, 30–45 s for posture work.
+- ORDER BY EQUIPMENT: all dumbbell/bench exercises first, then all cable-machine exercises. Never send him back to the dumbbells or benches once he's at the cable machine. Bodyweight moves like chin tucks go at the end. His gym has a single cable machine.
+- No floor exercises (push-ups, floor press) unless his notes ask for them; they're left out of the list below by default.
+- No warm-up section. He warms up with a lighter set or two of each main lift (not logged).
 - Strength focus: main lifts mostly 5–10 reps; accessories 10–15; posture work 12–20.
 - Posture (forward head): every session includes chin tucks plus one upper-back/rear-shoulder exercise. Across the week, pulling sets should be at least equal to pressing sets.
 - Respect his "about me" notes (e.g. no legs unless switched on, no squats, nothing slow to set up).
@@ -135,7 +138,7 @@ Rules for every plan:
 - The "note" is 1–2 short sentences to him in plain words, no hype, no emojis. Item notes are optional, under 15 words.`;
 
 function exerciseCatalog(settings: Settings): string {
-  return EXERCISES.filter((e) => isAvailable(e, settings))
+  return EXERCISES.filter((e) => plannable(e, settings))
     .map((e) => {
       const load = e.load === 'dumbbell' ? 'dumbbell, lb per hand' : e.load === 'cable' ? 'cable stack, lb' : 'bodyweight';
       return `${e.id} | ${e.name} | ${e.pattern} | ${load} | reps ${e.repRange[0]}–${e.repRange[1]}${e.holdSeconds ? ` | hold ${e.holdSeconds}s each rep` : ''}`;
@@ -177,41 +180,31 @@ export function needsAssessment(s: AppState, now = new Date()): boolean {
 }
 
 function planTool(settings: Settings, withAssessment: boolean) {
-  const ids = EXERCISES.filter((e) => isAvailable(e, settings)).map((e) => e.id);
+  const ids = EXERCISES.filter((e) => plannable(e, settings)).map((e) => e.id);
   return {
     name: 'submit_workout',
     description: 'Submit the next workout plan.',
     input_schema: {
       type: 'object',
-      required: ['title', 'focus', 'note', 'blocks', ...(withAssessment ? ['assessment'] : [])],
+      required: ['title', 'focus', 'note', 'exercises', ...(withAssessment ? ['assessment'] : [])],
       properties: {
         title: { type: 'string', description: 'Short, e.g. "Upper A"' },
         focus: { type: 'string', description: 'Under 8 words' },
         note: { type: 'string', description: '1–2 sentences to the lifter' },
-        blocks: {
+        exercises: {
           type: 'array',
+          description: 'In the order he does them: dumbbell/bench work first, then cable work, chin tucks last.',
           items: {
             type: 'object',
-            required: ['label', 'kind', 'rest_seconds', 'items'],
+            required: ['exercise_id', 'sets', 'reps', 'weight', 'rest_seconds'],
             properties: {
-              label: { type: 'string' },
-              kind: { type: 'string', enum: ['pair', 'single', 'finisher'] },
+              exercise_id: { type: 'string', enum: ids },
+              sets: { type: 'integer' },
+              reps: { type: 'integer' },
+              weight: { type: 'number' },
               rest_seconds: { type: 'integer' },
-              items: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  required: ['exercise_id', 'sets', 'reps', 'weight'],
-                  properties: {
-                    exercise_id: { type: 'string', enum: ids },
-                    sets: { type: 'integer' },
-                    reps: { type: 'integer' },
-                    weight: { type: 'number' },
-                    hold_seconds: { type: 'integer' },
-                    note: { type: 'string' }
-                  }
-                }
-              }
+              hold_seconds: { type: 'integer' },
+              note: { type: 'string' }
             }
           }
         },
@@ -237,7 +230,7 @@ Dumbbells (lb, per hand): ${settings.dumbbells.join(', ')}
 Cable stack: ${settings.cableIncrement} lb steps up to ${settings.cableMax}
 Legs switched ${settings.includeLegs ? 'ON' : 'OFF'}
 
-EXERCISES HE CAN DO (id | name | pattern | load | rep guide)
+EXERCISES HE CAN DO (id | name | pattern | load | rep guide) — load tells you the station: dumbbell = benches, cable = the cable machine
 ${exerciseCatalog(settings)}
 
 STATUS

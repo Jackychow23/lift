@@ -2,7 +2,7 @@
 // weekly bookkeeping (bonus day) and session helpers.
 import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises';
 import { CALIBRATION_SESSIONS } from './defaults';
-import type { AppState, DayType, Exercise, ExerciseLog, Plan, PlanBlock, PlanItem, Session, Settings } from './types';
+import type { AppState, DayType, Exercise, ExerciseLog, Plan, PlanBlock, Session, Settings } from './types';
 import { e1rm, sameWeek, uid } from './util';
 
 // ───────── equipment & weights ─────────
@@ -10,6 +10,11 @@ import { e1rm, sameWeek, uid } from './util';
 export function isAvailable(ex: Exercise, settings: Settings): boolean {
   if (ex.legs && !settings.includeLegs) return false;
   return ex.needs.every((k) => settings.equipment[k]);
+}
+
+/** Fit for a regular plan: equipment he has, legs only if switched on, floor work only if switched on. */
+export function plannable(ex: Exercise, settings: Settings): boolean {
+  return isAvailable(ex, settings) && (!ex.floor || settings.allowFloor);
 }
 
 export function availableWeights(ex: Exercise, settings: Settings): number[] {
@@ -58,12 +63,12 @@ export function alternatives(exId: string, settings: Settings, exclude: string[]
   };
   const order = related[ex.pattern] ?? [ex.pattern];
   const sameStation = (e: Exercise) => (station(e) === station(ex) ? 0 : 1);
-  return EXERCISES.filter((e) => e.id !== exId && !exclude.includes(e.id) && isAvailable(e, settings) && order.includes(e.pattern)).sort(
+  return EXERCISES.filter((e) => e.id !== exId && !exclude.includes(e.id) && plannable(e, settings) && order.includes(e.pattern)).sort(
     (a, b) => order.indexOf(a.pattern) - order.indexOf(b.pattern) || sameStation(a) - sameStation(b)
   );
 }
 
-// ───────── stations: a pair must stay on one piece of equipment ─────────
+// ───────── stations: dumbbells/bench vs the cable machine ─────────
 
 export type Station = 'dumbbells' | 'cable' | 'anywhere';
 
@@ -81,8 +86,54 @@ export function sharedStation(ids: string[]): Station | null {
 
 function usable(exId: string, settings: Settings, exclude: string[]): string {
   const ex = EXERCISE_BY_ID[exId];
-  if (ex && isAvailable(ex, settings)) return exId;
+  if (ex && plannable(ex, settings)) return exId;
   return alternatives(exId, settings, exclude)[0]?.id ?? exId;
+}
+
+/** Rest between sets: longer for the main lifts (time for a Spanish card or two). */
+export function defaultRest(ex: Exercise | undefined): number {
+  if (!ex) return 90;
+  if (ex.id === 'chin_tuck') return 30;
+  if (ex.pattern === 'posture') return 45;
+  if (['h_push', 'v_push', 'h_pull', 'v_pull'].includes(ex.pattern) && ex.repRange[0] <= 6) return 150;
+  return 75;
+}
+
+const kindFor = (ex: Exercise | undefined): PlanBlock['kind'] => (ex?.pattern === 'posture' ? 'finisher' : 'single');
+
+/**
+ * Do all the dumbbell/bench work first, then everything at the cable machine, so he never
+ * walks back to the benches. Bodyweight moves stay with whatever comes before them.
+ */
+export function orderByStation(blocks: PlanBlock[]): PlanBlock[] {
+  let prev: Station = 'dumbbells';
+  return blocks
+    .map((b, i) => {
+      const st = sharedStation(b.items.map((x) => x.exerciseId)) ?? 'cable';
+      const eff = st === 'anywhere' ? prev : st;
+      prev = eff;
+      return { b, i, r: eff === 'cable' ? 1 : 0 };
+    })
+    .sort((x, y) => x.r - y.r || x.i - y.i)
+    .map((x) => x.b);
+}
+
+/** One exercise at a time: split any pairs (from older plans) and order by station. */
+export function toStraightSets(plan: Plan): { plan: Plan; changed: boolean } {
+  let changed = false;
+  const blocks: PlanBlock[] = [];
+  for (const b of plan.blocks) {
+    if (b.items.length > 1) {
+      changed = true;
+      for (const it of b.items) {
+        const ex = EXERCISE_BY_ID[it.exerciseId];
+        blocks.push({ label: ex?.name ?? it.exerciseId, kind: kindFor(ex), restSeconds: defaultRest(ex), items: [it] });
+      }
+    } else blocks.push(b);
+  }
+  const ordered = orderByStation(blocks);
+  if (ordered.some((b, i) => b !== blocks[i])) changed = true;
+  return { plan: changed ? { ...plan, blocks: ordered } : plan, changed };
 }
 
 // ───────── history ─────────
@@ -173,25 +224,29 @@ function chinTuckHold(sessions: Session[]): number {
 // ───────── templates ─────────
 
 interface TemplateItem { id: string; sets: number }
-interface TemplateBlock { label: string; kind: PlanBlock['kind']; restSeconds: number; items: TemplateItem[] }
 
-export const TEMPLATES: Record<DayType, { title: string; focus: string; blocks: TemplateBlock[] }> = {
+/** Built-in days: one exercise at a time, dumbbells first, then the cable machine. ~12 sets, ~30 min. */
+export const TEMPLATES: Record<DayType, { title: string; focus: string; items: TemplateItem[] }> = {
   A: {
     title: 'Upper A',
     focus: 'Bench + row focus',
-    blocks: [
-      { label: 'Pair 1', kind: 'pair', restSeconds: 90, items: [{ id: 'db_bench_press', sets: 3 }, { id: 'one_arm_db_row', sets: 3 }] },
-      { label: 'Pair 2', kind: 'pair', restSeconds: 75, items: [{ id: 'seated_cable_row', sets: 3 }, { id: 'cable_pushdown', sets: 2 }] },
-      { label: 'Posture finisher', kind: 'finisher', restSeconds: 30, items: [{ id: 'face_pull', sets: 2 }, { id: 'chin_tuck', sets: 2 }] }
+    items: [
+      { id: 'db_bench_press', sets: 3 },
+      { id: 'one_arm_db_row', sets: 3 },
+      { id: 'cable_pushdown', sets: 2 },
+      { id: 'face_pull', sets: 2 },
+      { id: 'chin_tuck', sets: 2 }
     ]
   },
   B: {
     title: 'Upper B',
     focus: 'Overhead press + pulldown focus',
-    blocks: [
-      { label: 'Pair 1', kind: 'pair', restSeconds: 90, items: [{ id: 'db_shoulder_press', sets: 3 }, { id: 'rear_delt_fly', sets: 3 }] },
-      { label: 'Pair 2', kind: 'pair', restSeconds: 75, items: [{ id: 'lat_pulldown', sets: 3 }, { id: 'cable_overhead_triceps', sets: 2 }] },
-      { label: 'Posture finisher', kind: 'finisher', restSeconds: 30, items: [{ id: 'face_pull', sets: 2 }, { id: 'chin_tuck', sets: 2 }] }
+    items: [
+      { id: 'db_shoulder_press', sets: 3 },
+      { id: 'lat_pulldown', sets: 3 },
+      { id: 'seated_cable_row', sets: 2 },
+      { id: 'face_pull', sets: 2 },
+      { id: 'chin_tuck', sets: 2 }
     ]
   }
 };
@@ -207,35 +262,37 @@ export function buildBuiltinPlan(s: AppState, dayType: DayType = nextDayType(s))
   const calibrating = isCalibrating(s);
   const done = finished(s);
   const used: string[] = [];
-  const blocks: PlanBlock[] = t.blocks.map((b) => ({
-    label: b.label,
-    kind: b.kind,
-    restSeconds: b.restSeconds,
-    items: b.items.flatMap((it): PlanItem[] => {
-      const id = usable(it.id, s.settings, used);
-      const ex = EXERCISE_BY_ID[id];
-      if (!ex || !isAvailable(ex, s.settings) || used.includes(id)) return [];
-      used.push(id);
-      const tgt = nextTarget(ex, done, s.settings, calibrating);
-      return [
-        {
-          exerciseId: id,
-          sets: it.sets,
-          reps: tgt.reps,
-          weight: tgt.weight,
-          holdSeconds: id === 'chin_tuck' ? chinTuckHold(done) : undefined,
-          note: tgt.note
-        }
-      ];
-    })
-  })).filter((b) => b.items.length > 0);
+  const blocks: PlanBlock[] = t.items.flatMap((it): PlanBlock[] => {
+    const id = usable(it.id, s.settings, used);
+    const ex = EXERCISE_BY_ID[id];
+    if (!ex || !plannable(ex, s.settings) || used.includes(id)) return [];
+    used.push(id);
+    const tgt = nextTarget(ex, done, s.settings, calibrating);
+    return [
+      {
+        label: ex.name,
+        kind: kindFor(ex),
+        restSeconds: defaultRest(ex),
+        items: [
+          {
+            exerciseId: id,
+            sets: it.sets,
+            reps: tgt.reps,
+            weight: tgt.weight,
+            holdSeconds: id === 'chin_tuck' ? chinTuckHold(done) : undefined,
+            note: tgt.note
+          }
+        ]
+      }
+    ];
+  });
   const n = regularCount(s);
   const note = calibrating
     ? n === 0
       ? 'First session: weights start light on purpose. If a set feels easy, add reps; that tells the plan where you really are.'
       : `Calibration ${n + 1} of ${CALIBRATION_SESSIONS}: weights move up fast while we find your level. Add reps whenever a set feels easy.`
     : 'Same rules as always: beat the reps and the weight goes up next time.';
-  return splitMixedPairs({
+  return {
     id: uid(),
     createdAt: new Date().toISOString(),
     source: 'builtin',
@@ -243,8 +300,8 @@ export function buildBuiltinPlan(s: AppState, dayType: DayType = nextDayType(s))
     title: t.title,
     focus: t.focus,
     note,
-    blocks
-  }).plan;
+    blocks: orderByStation(blocks)
+  };
 }
 
 // ───────── week + bonus day ─────────
@@ -368,19 +425,6 @@ export function nextSet(session: Session): { ex: number; set: number } | null {
   return null;
 }
 
-/** Split any pair that would need two stations into one-at-a-time blocks. */
-export function splitMixedPairs(plan: Plan): { plan: Plan; changed: boolean } {
-  let changed = false;
-  const blocks: PlanBlock[] = [];
-  for (const b of plan.blocks) {
-    if (b.items.length > 1 && sharedStation(b.items.map((i) => i.exerciseId)) === null) {
-      changed = true;
-      b.items.forEach((it, k) => blocks.push({ ...b, label: `${b.label}${String.fromCharCode(97 + k)}`, kind: b.kind === 'finisher' ? 'finisher' : 'single', items: [it] }));
-    } else blocks.push(b);
-  }
-  return { plan: changed ? { ...plan, blocks } : plan, changed };
-}
-
 /**
  * "Cable machine taken": swap every cable exercise that hasn't been started for a
  * non-cable stand-in (or, with on=false, swap back to the originals).
@@ -419,50 +463,58 @@ export const setCounts = (session: Session) => {
 
 // ───────── guardrails for plans from Claude ─────────
 
-export interface RawPlanItem { exercise_id: string; sets: number; reps: number; weight: number; hold_seconds?: number; note?: string }
-export interface RawPlanBlock { label: string; kind: string; rest_seconds: number; items: RawPlanItem[] }
-export interface RawPlan { title: string; focus: string; note: string; blocks: RawPlanBlock[] }
+export interface RawPlanItem { exercise_id: string; sets: number; reps: number; weight: number; rest_seconds?: number; hold_seconds?: number; note?: string }
+export interface RawPlanBlock { label?: string; kind?: string; rest_seconds?: number; items: RawPlanItem[] }
+/** New plans list exercises in order; older answers grouped them in blocks. Both are accepted. */
+export interface RawPlan { title: string; focus: string; note: string; exercises?: RawPlanItem[]; blocks?: RawPlanBlock[] }
 
 /**
  * Keep a plan inside safe, doable bounds no matter what came back:
- * known exercises only, equipment he has, real dumbbell/stack weights,
- * no jump of more than two notches over what he last lifted, ~16 working sets.
+ * known exercises only, equipment he has, no floor work unless switched on,
+ * real dumbbell/stack weights, no jump of more than two notches over what he
+ * last lifted, ~15 working sets, one exercise at a time, dumbbells before cables.
  */
 export function sanitizePlan(raw: RawPlan, s: AppState, dayType: DayType): Plan {
   const calibrating = isCalibrating(s);
   const done = finished(s);
   const used: string[] = [];
-  let budget = 18;
+  let budget = 15;
+  const flat: { it: RawPlanItem; rest?: number }[] = Array.isArray(raw.exercises)
+    ? raw.exercises.map((it) => ({ it, rest: it?.rest_seconds }))
+    : (Array.isArray(raw.blocks) ? raw.blocks : []).flatMap((b) =>
+        (Array.isArray(b?.items) ? b.items : []).map((it) => ({ it, rest: it?.rest_seconds ?? (b.items.length > 1 ? undefined : b.rest_seconds) }))
+      );
   const blocks: PlanBlock[] = [];
-  for (const b of Array.isArray(raw.blocks) ? raw.blocks.slice(0, 5) : []) {
-    const items: PlanItem[] = [];
-    for (const it of Array.isArray(b.items) ? b.items.slice(0, 3) : []) {
-      if (budget <= 0) break;
-      if (!EXERCISE_BY_ID[it.exercise_id]) continue;
-      const id = usable(it.exercise_id, s.settings, used);
-      const ex = EXERCISE_BY_ID[id];
-      if (!ex || !isAvailable(ex, s.settings) || used.includes(id)) continue;
-      const sets = Math.max(1, Math.min(5, Math.round(Number(it.sets) || 3), budget));
-      budget -= sets;
-      let weight = ex.load === 'bodyweight' ? 0 : roundToAvailable(ex, Number(it.weight) || ex.start, s.settings);
-      const last = lastLogFor(done, id);
-      if (ex.load !== 'bodyweight') {
-        const ref = last ? workingSet(last).weight : ex.start;
-        const cap = stepWeight(ex, ref, calibrating ? 2 : 1, s.settings);
-        if (weight > cap) weight = cap;
-      }
-      const reps = Math.max(1, Math.min(30, Math.round(Number(it.reps) || ex.repRange[0])));
-      const hold = id === 'chin_tuck' ? Math.max(3, Math.min(15, Math.round(Number(it.hold_seconds) || 5))) : undefined;
-      used.push(id);
-      items.push({ exerciseId: id, sets, reps, weight, holdSeconds: hold, note: typeof it.note === 'string' ? it.note.slice(0, 140) : undefined });
+  // A stand-in for something he can't do must not be an exercise that's already further down the list.
+  const requested = flat.map((f) => f.it?.exercise_id).filter((x): x is string => typeof x === 'string');
+  for (const { it, rest } of flat.slice(0, 8)) {
+    if (budget <= 0) break;
+    if (!it || !EXERCISE_BY_ID[it.exercise_id]) continue;
+    const id = usable(it.exercise_id, s.settings, [...used, ...requested.filter((r) => r !== it.exercise_id)]);
+    const ex = EXERCISE_BY_ID[id];
+    if (!ex || !plannable(ex, s.settings) || used.includes(id)) continue;
+    const sets = Math.max(1, Math.min(5, Math.round(Number(it.sets) || 3), budget));
+    budget -= sets;
+    let weight = ex.load === 'bodyweight' ? 0 : roundToAvailable(ex, Number(it.weight) || ex.start, s.settings);
+    const last = lastLogFor(done, id);
+    if (ex.load !== 'bodyweight') {
+      const ref = last ? workingSet(last).weight : ex.start;
+      const cap = stepWeight(ex, ref, calibrating ? 2 : 1, s.settings);
+      if (weight > cap) weight = cap;
     }
-    if (!items.length) continue;
-    const kind: PlanBlock['kind'] = b.kind === 'finisher' ? 'finisher' : items.length > 1 ? 'pair' : 'single';
-    const rest = Math.max(20, Math.min(240, Math.round(Number(b.rest_seconds) || (kind === 'finisher' ? 30 : 90))));
-    blocks.push({ label: String(b.label || `Block ${blocks.length + 1}`).slice(0, 40), kind, restSeconds: rest, items });
+    const reps = Math.max(1, Math.min(30, Math.round(Number(it.reps) || ex.repRange[0])));
+    const hold = id === 'chin_tuck' ? Math.max(3, Math.min(15, Math.round(Number(it.hold_seconds) || 5))) : undefined;
+    const restSeconds = Math.max(20, Math.min(240, Math.round(Number(rest) || defaultRest(ex))));
+    used.push(id);
+    blocks.push({
+      label: ex.name,
+      kind: kindFor(ex),
+      restSeconds,
+      items: [{ exerciseId: id, sets, reps, weight, holdSeconds: hold, note: typeof it.note === 'string' ? it.note.slice(0, 140) : undefined }]
+    });
   }
   if (!blocks.length) throw new Error('Plan had no usable exercises');
-  return splitMixedPairs({
+  return {
     id: uid(),
     createdAt: new Date().toISOString(),
     source: 'claude',
@@ -470,6 +522,6 @@ export function sanitizePlan(raw: RawPlan, s: AppState, dayType: DayType): Plan 
     title: String(raw.title || TEMPLATES[dayType].title).slice(0, 40),
     focus: String(raw.focus || '').slice(0, 80),
     note: String(raw.note || '').slice(0, 280),
-    blocks
-  }).plan;
+    blocks: orderByStation(blocks)
+  };
 }

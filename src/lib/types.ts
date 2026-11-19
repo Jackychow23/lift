@@ -34,6 +34,8 @@ export interface Exercise {
   /** Seconds to hold each rep (chin tucks). */
   holdSeconds?: number;
   legs?: boolean;
+  /** Done lying or kneeling on the floor — left out unless floor work is switched on. */
+  floor?: boolean;
   images: string[];
   steps: string[];
   feel: { main: string[]; also: string[] };
@@ -127,6 +129,8 @@ export interface Settings {
   cableMax: number;
   equipment: Record<EquipmentKey, boolean>;
   includeLegs: boolean;
+  /** Push-ups, floor press: off by default. */
+  allowFloor: boolean;
   sound: boolean;
   /** Free text the coach reads every time — goals, injuries, likes, dislikes. */
   aboutMe: string;

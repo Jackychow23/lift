@@ -120,14 +120,21 @@ export function contextsFor(card: SpanishCard, sp: SpanishState): Context[] {
   return out;
 }
 
-function distractors(card: SpanishCard, pool: SpanishCard[], get: (c: SpanishCard) => string, n: number, rand: () => number): string[] {
-  const right = get(card).toLowerCase();
-  const sameCat = shuffle(pool.filter((c) => c.id !== card.id && c.cat === card.cat), rand);
-  const rest = shuffle(pool.filter((c) => c.id !== card.id && c.cat !== card.cat), rand);
+/**
+ * Wrong answers. Never the right answer itself (a borrowed sentence can belong to another
+ * card), never a card that means the same thing (el cuarto / la habitación), never twice.
+ */
+function distractors(card: SpanishCard, pool: SpanishCard[], get: (c: SpanishCard) => string, n: number, rand: () => number, correct: string): string[] {
+  const norm = (x: string) => x.toLowerCase().replace(/[¿?¡!.,]/g, '').trim();
+  const right = norm(correct);
+  const sameMeaning = (c: SpanishCard) => norm(c.en) === norm(card.en);
+  const others = pool.filter((c) => c.id !== card.id && !sameMeaning(c));
+  const sameCat = shuffle(others.filter((c) => c.cat === card.cat), rand);
+  const rest = shuffle(others.filter((c) => c.cat !== card.cat), rand);
   const out: string[] = [];
   for (const c of [...sameCat, ...rest]) {
     const v = get(c);
-    if (!v || v.toLowerCase() === right || out.some((o) => o.toLowerCase() === v.toLowerCase())) continue;
+    if (!v || norm(v) === right || out.some((o) => norm(o) === norm(v))) continue;
     out.push(v);
     if (out.length === n) break;
   }
@@ -154,7 +161,7 @@ export function buildQuestion(
     const capital = hl[1].charAt(0) !== hl[1].charAt(0).toLowerCase();
     const matchCase = (s: string) => (capital ? s.charAt(0).toUpperCase() + s.slice(1) : s);
     correct = hl[1];
-    others = distractors(card, pool, form, 3, rand).map(matchCase);
+    others = distractors(card, pool, form, 3, rand, correct).map(matchCase);
     q = {
       card, mode, prompt: context.es, promptLang: 'es', highlight: hl, support: context.en,
       question: 'Which word fills the blank?', optionsLang: 'es', context,
@@ -162,7 +169,7 @@ export function buildQuestion(
     };
   } else if (mode === 'sentence') {
     correct = context.en;
-    others = distractors(card, pool, (c) => c.sentenceEn, 3, rand);
+    others = distractors(card, pool, (c) => c.sentenceEn, 3, rand, correct);
     q = {
       card, mode, prompt: context.es, promptLang: 'es', highlight: null, support: null,
       question: 'What does this sentence mean?', optionsLang: 'en', context,
@@ -170,7 +177,7 @@ export function buildQuestion(
     };
   } else if (mode === 'reverse') {
     correct = card.word;
-    others = distractors(card, pool, (c) => c.word, 3, rand);
+    others = distractors(card, pool, (c) => c.word, 3, rand, correct);
     q = {
       card, mode, prompt: context.en, promptLang: 'en', highlight: null, support: null,
       question: `Which word means “${card.en}”?`, optionsLang: 'es', context,
@@ -178,7 +185,7 @@ export function buildQuestion(
     };
   } else {
     correct = card.en;
-    others = distractors(card, pool, (c) => c.en, 3, rand);
+    others = distractors(card, pool, (c) => c.en, 3, rand, correct);
     q = {
       card, mode: 'word', prompt: context.es, promptLang: 'es', highlight: hl, support: null,
       question: `What does “${card.word}” mean?`, optionsLang: 'en', context,

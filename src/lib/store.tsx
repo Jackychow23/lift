@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { requestCards, requestContexts, requestPlan, requestStories } from './claude';
-import { buildBuiltinPlan, splitMixedPairs, startSession } from './planner';
+import { buildBuiltinPlan, startSession, toStraightSets } from './planner';
 import { allCards, contextsFor, stats } from './srs';
 import { loadState, requestPersistence, saveState } from './storage';
 import type { AppState, Plan } from './types';
@@ -124,9 +124,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     void requestPersistence();
     loadState().then((s) => {
       let ready = !s.plan && !s.active ? { ...s, plan: buildBuiltinPlan(s) } : s;
-      // Plans saved before the same-equipment rule: split any pair that needs two stations,
-      // then ask Claude for a fresh plan that follows the rule.
-      const fixed = ready.plan && !ready.active ? splitMixedPairs(ready.plan) : { plan: ready.plan, changed: false };
+      // Plans saved before one-exercise-at-a-time: split the pairs, put dumbbells before cables,
+      // then ask Claude for a fresh plan written the new way.
+      const fixed = ready.plan && !ready.active ? toStraightSets(ready.plan) : { plan: ready.plan, changed: false };
       if (fixed.changed) ready = { ...ready, plan: fixed.plan };
       commit(ready);
       lastAuto.current = Date.now();

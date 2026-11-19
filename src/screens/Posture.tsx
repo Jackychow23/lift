@@ -35,7 +35,7 @@ export default function Posture({ nav }: { nav: Nav }) {
         <section className="card stack">
           <p className="label">1 · Neck hold</p>
           <p className="body">
-            Lie on your back, knees bent. Tuck your chin, then lift your head about an inch off the floor, keeping the tuck. Hold as long as
+            Lie on your back on a bench (or the floor), knees bent. Tuck your chin, then lift your head about an inch, keeping the tuck. Hold as long as
             you can. Stop when your chin pokes up or your head drops.
           </p>
           <span className="clock" style={{ fontSize: 52 }}>{live.toFixed(0)} s</span>

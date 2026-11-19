@@ -153,6 +153,10 @@ export default function SettingsScreen() {
             </label>
           ))}
           <label className="toggle">
+            <span>Floor exercises (push-ups, floor press)</span>
+            <input type="checkbox" checked={s.allowFloor} onChange={(e) => set({ allowFloor: e.target.checked })} />
+          </label>
+          <label className="toggle">
             <span>Include legs</span>
             <input type="checkbox" checked={s.includeLegs} onChange={(e) => set({ includeLegs: e.target.checked })} />
           </label>
