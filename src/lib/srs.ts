@@ -52,7 +52,8 @@ export function learningCap(sp: SpanishState): number {
 }
 
 export function stats(sp: SpanishState, now = Date.now()) {
-  const entries = Object.values(sp.progress);
+  const ids = new Set(allCards(sp).map((c) => c.id));
+  const entries = Object.entries(sp.progress).filter(([id]) => ids.has(id)).map(([, p]) => p);
   const learning = entries.filter((p) => p.box >= 1 && p.box <= 3).length;
   const due = entries.filter((p) => p.box >= 1 && p.due <= now).length;
   const mastered = entries.filter((p) => p.box >= 5).length;

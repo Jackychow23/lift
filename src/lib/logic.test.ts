@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EXERCISE_BY_ID, EXERCISES } from '../data/exercises';
 import { BASE_DECK } from '../data/spanish';
-import { freshState } from './defaults';
+import { freshState, migrate } from './defaults';
 import {
   buildBonusPlan,
   buildBuiltinPlan,
@@ -208,6 +208,7 @@ describe('workout flow', () => {
 describe('Spanish cards', () => {
   it('deck is well-formed', () => {
     expect(BASE_DECK.length).toBeGreaterThan(100);
+    expect(migrate({ settings: {}, sessions: [], spanish: { extraCards: [{ id: 'x' }], contexts: { a: [] }, stories: [{}] } }).spanish.extraCards).toEqual([]);
     expect(new Set(BASE_DECK.map((c) => c.word)).size).toBe(BASE_DECK.length);
   });
 
@@ -217,11 +218,11 @@ describe('Spanish cards', () => {
     expect(q.options).toHaveLength(4);
     expect(new Set(q.options).size).toBe(4);
     expect(q.options[q.answerIndex]).toBe(card.en);
-    expect(q.highlight?.[1]).toBe('la espalda');
+    expect(q.highlight?.[1]).toBe('Cuánto cuesta');
   });
 
   it('highlights whole words inside sentences', () => {
-    expect(findHighlight('¿Cuánto pesa la mancuerna?', 'la mancuerna')?.[1]).toBe('la mancuerna');
+    expect(findHighlight('¿Dónde está la parada del colectivo?', 'la parada')?.[1]).toBe('la parada');
     expect(findHighlight('Jala hacia el pecho.', 'jalar')).toBeNull();
     expect(findHighlight('Quiero ir a la playa.', 'ya')).toBeNull();
     expect(findHighlight('¿Cuánto cuesta la membresía?', '¿cuánto?')?.[1]).toBe('Cuánto');
@@ -231,19 +232,32 @@ describe('Spanish cards', () => {
     expect(BASE_DECK.filter((c) => !c.hook).length).toBeLessThanOrEqual(3);
   });
 
+  it('every built-in sentence contains its own word (so fill-in-the-blank works)', () => {
+    const missing = BASE_DECK.filter((c) => !findHighlight(c.es, c.word)).map((c) => c.word);
+    expect(missing).toEqual([]);
+    expect(new Set(BASE_DECK.map((c) => c.id)).size).toBe(BASE_DECK.length);
+  });
+
+  it('starts with trip essentials', () => {
+    const first = BASE_DECK.slice(0, 10).map((c) => c.word);
+    expect(first).toContain('el taxi');
+    expect(first).toContain('¿cuánto cuesta?');
+  });
+
   it('shows a word in different sentences on later reviews', () => {
     const sp = freshState().spanish;
-    const card = BASE_DECK.find((c) => c.word === 'la mancuerna')!;
+    const card = BASE_DECK.find((c) => c.word === 'la habitación')!;
     const ctx = contextsFor(card, sp);
     expect(ctx.length).toBeGreaterThan(1);
     expect(ctx[0].es).toBe(card.es);
   });
 
   it('fill-in-the-blank uses the sentence\'s own form and Spanish options', () => {
-    const card = BASE_DECK.find((c) => c.word === 'la espalda')!;
+    const card = BASE_DECK.find((c) => c.word === 'el cambio')!;
     const q = buildQuestion(card, 'cloze', BASE_DECK, () => 0.4);
     expect(q.mode).toBe('cloze');
-    expect(q.options[q.answerIndex]).toBe('la espalda');
+    expect(q.options[q.answerIndex]).toBe('cambio');
+    expect(q.options.every((o) => !/^(el|la) /.test(o))).toBe(true);
     expect(q.optionsLang).toBe('es');
     expect(q.support).toBe(card.sentenceEn);
   });

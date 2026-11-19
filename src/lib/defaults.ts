@@ -8,6 +8,8 @@ Keep setup quick: no power rack, no barbells or plates, and I'd rather avoid the
 If a set feels easy I add reps or a set; if it's too hard I lower the weight. I don't rate difficulty.
 I warm up by doing the workout itself at a lighter weight first, so no separate warm-up.`;
 
+export const DEFAULT_SPANISH_FOCUS = `A week in the Cancún–Tulum area for a friend's wedding. I want Spanish that helps me get around: agreeing taxi prices (no meters) and understanding prices in pesos, colectivos and ADO buses, checking in and asking for things at the hotel, ordering and paying at taquerías and restaurants, asking directions, the beach, cenotes and ruins, and simple small talk with people at the wedding. Mexican Spanish.`;
+
 export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   model: 'claude-sonnet-5-5',
@@ -25,7 +27,8 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   includeLegs: false,
   sound: true,
-  aboutMe: DEFAULT_ABOUT_ME
+  aboutMe: DEFAULT_ABOUT_ME,
+  spanishFocus: DEFAULT_SPANISH_FOCUS
 };
 
 export function freshState(): AppState {
@@ -47,6 +50,9 @@ export function migrate(raw: unknown): AppState {
   const base = freshState();
   if (!raw || typeof raw !== 'object') return base;
   const s = raw as Partial<AppState>;
+  // Saves from before the travel deck: their Claude-written cards, sentences and stories were
+  // gym-themed, so start those fresh (built-in deck progress is keyed by word and just restarts).
+  const preTravel = typeof s.settings?.spanishFocus !== 'string';
   return {
     ...base,
     ...s,
@@ -60,10 +66,10 @@ export function migrate(raw: unknown): AppState {
     posture: Array.isArray(s.posture) ? s.posture : [],
     spanish: {
       progress: s.spanish?.progress ?? {},
-      extraCards: s.spanish?.extraCards ?? [],
+      extraCards: preTravel ? [] : s.spanish?.extraCards ?? [],
       recent: s.spanish?.recent ?? [],
-      contexts: s.spanish?.contexts ?? {},
-      stories: s.spanish?.stories ?? []
+      contexts: preTravel ? {} : s.spanish?.contexts ?? {},
+      stories: preTravel ? [] : s.spanish?.stories ?? []
     },
     claude: { ...base.claude, ...(s.claude ?? {}) }
   };

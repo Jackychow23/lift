@@ -272,7 +272,10 @@ Write his next workout with submit_workout.${withAssessment ? ' Also include an 
 
 // ───────── Spanish cards ─────────
 
-const SPANISH_SYSTEM = `You write flashcards for a beginner learning Spanish between sets at the gym. He learns mainly through comprehensible input (Dreaming Spanish), so every card teaches one word or short phrase INSIDE a short, natural sentence. Use Mexican Spanish where it differs. Each sentence must contain the word (or an obvious form of it). Sentences: 3–9 words for level 1–2, up to 12 for level 3+. Give natural English. Topics: gym, body, food, daily life, travel, small talk. No duplicates of words he already has. Always answer by calling the provided tool; don't reply with plain text.`;
+const spanishSystem = (settings: Settings) => `You write Spanish practice for a beginner who studies between sets at the gym. He learns mainly through comprehensible input (Dreaming Spanish), so every card teaches one word or short phrase INSIDE a short, natural sentence. Use Mexican Spanish where it differs. Each sentence must contain the word (or an obvious form of it). Sentences: 3–9 words for level 1–2, up to 12 for level 3+. Give natural English. No duplicates of words he already has. Always answer by calling the provided tool; don't reply with plain text.
+
+WHAT HE'S LEARNING SPANISH FOR (written by him; choose words, sentences and story situations that serve this):
+${settings.spanishFocus}`;
 
 export async function requestCards(s: AppState, count = 20): Promise<SpanishCard[]> {
   const st = stats(s.spanish);
@@ -291,7 +294,7 @@ Words he already has (do not repeat as targets): ${known.join(', ')}
 Write ${count} new cards with add_cards.`;
   const resp = await callClaude(s.settings, {
     max_tokens: 8000,
-    system: SPANISH_SYSTEM,
+    system: spanishSystem(s.settings),
     tools: [
       {
         name: 'add_cards',
@@ -339,7 +342,7 @@ ${cards.map((c) => `- ${c.word} (${c.en}); current example: ${c.es}`).join('\n')
 Answer with add_sentences.`;
   const resp = await callClaude(s.settings, {
     max_tokens: 8000,
-    system: SPANISH_SYSTEM,
+    system: spanishSystem(s.settings),
     tools: [
       {
         name: 'add_sentences',
@@ -382,11 +385,11 @@ Write ${count} mini-stories with add_stories. Each:
 - 2–3 short sentences in Spanish (Mexican Spanish), present tense unless he clearly knows past forms. About 90% of the words should be from his list or very common words (el, la, y, es, está, en, con, a, de, muy, no, sí, mi, tu, un, una, hoy).
 - At most 2 words he doesn't know yet; list them in new_words with English.
 - One comprehension question IN ENGLISH about the story with 4 short options, exactly one correct, the wrong ones plausible.
-- Everyday or gym topics. Vary the topics and the people (a friend, a coworker, a dog, a trainer…). Not about the lifter himself.
+- Situations from his focus above (e.g. agreeing a taxi price, ordering at a taquería, checking into a hotel, asking for directions, chatting at a wedding). Vary the situations and the people (a taxi driver, a waiter, a hotel clerk, a guest…). Write him as "tú" or tell it about other people.
 - "en" is a natural English translation of the whole story.`;
   const resp = await callClaude(s.settings, {
     max_tokens: 8000,
-    system: SPANISH_SYSTEM,
+    system: spanishSystem(s.settings),
     tools: [
       {
         name: 'add_stories',

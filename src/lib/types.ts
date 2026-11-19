@@ -130,6 +130,8 @@ export interface Settings {
   sound: boolean;
   /** Free text the coach reads every time — goals, injuries, likes, dislikes. */
   aboutMe: string;
+  /** What the Spanish cards and stories should be about. Claude reads it when writing new ones. */
+  spanishFocus: string;
 }
 
 export interface SpanishCard {

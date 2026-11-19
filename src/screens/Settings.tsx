@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { testConnection } from '../lib/claude';
-import { DEFAULT_ABOUT_ME, freshState } from '../lib/defaults';
+import { DEFAULT_ABOUT_ME, DEFAULT_SPANISH_FOCUS, freshState } from '../lib/defaults';
 import { useOnline } from '../lib/hooks';
 import { stats } from '../lib/srs';
 import { exportJson, importJson } from '../lib/storage';
@@ -167,6 +167,12 @@ export default function SettingsScreen() {
             <input type="checkbox" checked={s.sound} onChange={(e) => set({ sound: e.target.checked })} />
           </label>
         </div>
+        <label className="field">
+          <span>What Spanish is for</span>
+          <textarea className="input" style={{ minHeight: 120 }} value={s.spanishFocus} onChange={(e) => set({ spanishFocus: e.target.value })} />
+        </label>
+        <p className="small" style={{ margin: 0, lineHeight: 1.5 }}>Claude reads this when it writes new words, example sentences and mini-stories. Change it when your plans change.</p>
+        <button type="button" className="btn ghost" style={{ alignSelf: 'flex-start' }} onClick={() => set({ spanishFocus: DEFAULT_SPANISH_FOCUS })}>Reset to the Tulum trip</button>
         <p className="small" style={{ margin: 0, lineHeight: 1.5 }}>
           Spanish: level {sp.level} · {sp.seen} words seen · {sp.mastered} well learned · {sp.unseen} new waiting
           {state.spanish.extraCards.length ? ` · ${state.spanish.extraCards.length} written by Claude` : ''}.
