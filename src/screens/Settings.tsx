@@ -30,7 +30,13 @@ export default function SettingsScreen() {
   const fileRef = useRef<HTMLInputElement>(null);
   const sp = stats(state.spanish);
 
-  const set = (patch: Partial<Settings>) => update((st) => ({ ...st, settings: { ...st.settings, ...patch } }));
+  const set = (patch: Partial<Settings>) =>
+    update((st) => ({
+      ...st,
+      settings: { ...st.settings, ...patch },
+      // A new key or model gets a clean slate; the old error no longer applies.
+      claude: 'apiKey' in patch || 'model' in patch ? { ...st.claude, lastError: null } : st.claude
+    }));
   const setEq = (k: EquipmentKey, v: boolean) => update((st) => ({ ...st, settings: { ...st.settings, equipment: { ...st.settings.equipment, [k]: v } } }));
 
   const runTest = async () => {

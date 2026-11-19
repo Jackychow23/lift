@@ -277,3 +277,13 @@ describe('Spanish cards', () => {
     expect(nextQuestion(sp, t0)).not.toBeNull();
   });
 });
+
+import { explainApiError } from './claude';
+describe('API errors in plain words', () => {
+  it('names the usual problems', () => {
+    expect(explainApiError(401, 'invalid x-api-key')).toMatch(/API key not accepted/);
+    expect(explainApiError(400, 'Your credit balance is too low to access the Anthropic API.')).toMatch(/no API credit/);
+    expect(explainApiError(404, 'model: claude-x')).toMatch(/wasn't found/);
+    expect(explainApiError(529, 'Overloaded')).toMatch(/busy/);
+  });
+});

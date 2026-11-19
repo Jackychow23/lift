@@ -118,7 +118,7 @@ export default function Today({ nav }: { nav: Nav }) {
       ) : state.claude.lastError && plan?.source !== 'claude' && online ? (
         <div className="banner">
           <span className="dot" style={{ background: 'var(--bad)', marginTop: 6 }} />
-          <span>Couldn't reach Claude ({state.claude.lastError}). Using the built-in plan; it'll try again later.</span>
+          <span>Couldn't get a plan from Claude: {state.claude.lastError} Using the built-in plan for now; Settings → Test connection checks it again.</span>
         </div>
       ) : null}
     </div>

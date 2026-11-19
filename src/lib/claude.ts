@@ -8,6 +8,21 @@ import { daysBetween } from './util';
 
 const API = 'https://api.anthropic.com/v1/messages';
 
+/** Turn API errors into something you can act on from the phone. */
+export function explainApiError(status: number, detail: string): string {
+  const d = detail.toLowerCase();
+  if (status === 401 || d.includes('x-api-key') || d.includes('authentication'))
+    return 'API key not accepted. Copy it again from console.anthropic.com → API keys and paste it in Settings.';
+  if (d.includes('credit balance') || d.includes('billing'))
+    return 'The Anthropic account has no API credit. Add some at console.anthropic.com → Billing (this is separate from a Claude subscription).';
+  if (status === 403) return `This API key isn't allowed to do that (${detail || 'permission denied'}).`;
+  if (status === 404)
+    return `Model “${'{model}'}” wasn't found. Check the model name in Settings.${detail ? ` (${detail})` : ''}`;
+  if (status === 429) return 'Too many requests or spend limit reached. It will retry later; check limits at console.anthropic.com.';
+  if (status === 529 || status >= 500) return 'Claude is busy right now. It will retry later.';
+  return `Claude API ${status}${detail ? `: ${detail}` : ''}`;
+}
+
 interface ToolUseBlock { type: 'tool_use'; name: string; input: unknown }
 
 async function callClaude(settings: Settings, body: Record<string, unknown>, timeoutMs = 90_000): Promise<{ content: ToolUseBlock[] }> {
@@ -34,11 +49,12 @@ async function callClaude(settings: Settings, body: Record<string, unknown>, tim
       } catch {
         /* ignore */
       }
-      throw new Error(`Claude API ${res.status}${detail ? `: ${detail}` : ''}`);
+      throw new Error(explainApiError(res.status, detail).replace('{model}', settings.model.trim()));
     }
     return await res.json();
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw new Error('Claude took too long to answer. Will retry later.');
+    if (e instanceof TypeError) throw new Error('No connection to Claude right now. Will retry when online.');
     throw e;
   } finally {
     clearTimeout(timer);
