@@ -101,6 +101,86 @@ export function defaultRest(ex: Exercise | undefined): number {
 
 const kindFor = (ex: Exercise | undefined): PlanBlock['kind'] => (ex?.pattern === 'posture' ? 'finisher' : 'single');
 
+// ───────── timing: every plan has to fit his time limit ─────────
+
+/** Seconds to move to an exercise and set it up. */
+export const SETUP_SECONDS = 45;
+/** His own lighter warm-up sets before each main lift. */
+export const WARMUP_SECONDS = 75;
+
+export const isMainLift = (ex: Exercise | undefined) =>
+  !!ex && ['h_push', 'v_push', 'h_pull', 'v_pull'].includes(ex.pattern) && ex.repRange[0] <= 6;
+
+/** Rough time under the bar for one set. */
+export function setSeconds(ex: Exercise, reps: number, hold?: number): number {
+  if (hold) return reps * hold + 10;
+  const base = reps > 12 ? 50 : 40;
+  return ex.unilateral ? base * 2 : base;
+}
+
+/** Estimated workout length: set-up, warm-up sets for main lifts, working sets and the rests between them. */
+export function estimateSeconds(blocks: PlanBlock[]): number {
+  let t = 0;
+  blocks.forEach((b, bi) =>
+    b.items.forEach((it, ii) => {
+      const ex = EXERCISE_BY_ID[it.exerciseId];
+      if (!ex) return;
+      if (bi > 0 || ii > 0) t += SETUP_SECONDS;
+      if (isMainLift(ex)) t += WARMUP_SECONDS;
+      t += it.sets * setSeconds(ex, it.reps, it.holdSeconds) + Math.max(0, it.sets - 1) * b.restSeconds;
+    })
+  );
+  return t;
+}
+
+export const estimateMinutes = (blocks: PlanBlock[]) => Math.round(estimateSeconds(blocks) / 60);
+
+/** Time left in a workout in progress. */
+export function remainingSeconds(session: Session): number {
+  let t = 0;
+  // Before the first set, the first exercise's set-up isn't counted (same as the plan estimate).
+  let skipSetup = !session.exercises.some((e) => e.sets.some((x) => x.done));
+  session.exercises.forEach((log) => {
+    const ex = EXERCISE_BY_ID[log.exerciseId];
+    if (!ex) return;
+    const left = log.sets.filter((x) => !x.done);
+    if (!left.length) return;
+    const started = log.sets.some((x) => x.done);
+    const rest = session.blocks[log.blockIndex]?.restSeconds ?? 60;
+    if (!started) t += (skipSetup ? 0 : SETUP_SECONDS) + (isMainLift(ex) ? WARMUP_SECONDS : 0);
+    skipSetup = false;
+    t += left.reduce((n, x) => n + setSeconds(ex, x.reps, log.holdSeconds), 0) + (started ? left.length : left.length - 1) * rest;
+  });
+  return t;
+}
+
+/**
+ * Trim a plan until it fits the time limit. Order of cuts: extra accessory sets, extra main-lift
+ * sets, then whole accessories from the end, then posture sets (chin tucks stay), then main lifts down to 2 sets.
+ */
+export function fitToTime(blocks: PlanBlock[], limitSeconds: number): PlanBlock[] {
+  const out: PlanBlock[] = blocks.map((b) => ({ ...b, items: b.items.map((i) => ({ ...i })) }));
+  const role = (id: string) => {
+    const ex = EXERCISE_BY_ID[id];
+    return isMainLift(ex) ? 'main' : ex?.pattern === 'posture' ? 'posture' : 'accessory';
+  };
+  for (let guard = 0; guard < 40 && estimateSeconds(out) > limitSeconds; guard++) {
+    const items = out.flatMap((b, bi) => b.items.map((it, ii) => ({ it, bi, ii, role: role(it.exerciseId) })));
+    const pick =
+      [...items].reverse().find((x) => x.role === 'accessory' && x.it.sets > 2) ??
+      [...items].reverse().find((x) => x.role === 'main' && x.it.sets > 3) ??
+      [...items].reverse().find((x) => x.role === 'accessory') ??
+      [...items].reverse().find((x) => x.role === 'posture' && x.it.exerciseId !== 'chin_tuck' && x.it.sets > 1) ??
+      [...items].reverse().find((x) => x.role === 'main' && x.it.sets > 2);
+    if (!pick) break;
+    if (pick.role === 'accessory' && pick.it.sets <= 2) {
+      out[pick.bi].items.splice(pick.ii, 1);
+      if (!out[pick.bi].items.length) out.splice(pick.bi, 1);
+    } else pick.it.sets -= 1;
+  }
+  return out;
+}
+
 /**
  * Do all the dumbbell/bench work first, then everything at the cable machine, so he never
  * walks back to the benches. Bodyweight moves stay with whatever comes before them.
@@ -300,7 +380,7 @@ export function buildBuiltinPlan(s: AppState, dayType: DayType = nextDayType(s))
     title: t.title,
     focus: t.focus,
     note,
-    blocks: orderByStation(blocks)
+    blocks: fitToTime(orderByStation(blocks), s.settings.sessionMinutes * 60)
   };
 }
 
@@ -357,7 +437,7 @@ export function buildBonusPlan(s: AppState): Plan | null {
     title: `Bonus: ${weakest.title.replace(/^Bonus:\s*/, '')}`,
     focus: 'Another go at your weakest day this week',
     note: 'Same targets as the day that went worst. Beat them if you can; it counts toward next week.',
-    blocks
+    blocks: fitToTime(blocks, s.settings.sessionMinutes * 60)
   };
 }
 
@@ -522,6 +602,6 @@ export function sanitizePlan(raw: RawPlan, s: AppState, dayType: DayType): Plan 
     title: String(raw.title || TEMPLATES[dayType].title).slice(0, 40),
     focus: String(raw.focus || '').slice(0, 80),
     note: String(raw.note || '').slice(0, 280),
-    blocks: orderByStation(blocks)
+    blocks: fitToTime(orderByStation(blocks), s.settings.sessionMinutes * 60)
   };
 }

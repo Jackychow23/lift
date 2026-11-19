@@ -123,7 +123,7 @@ How the app works:
 
 Rules for every plan:
 - One exercise at a time: straight sets, no supersets or pairs. List exercises in the order he does them.
-- About 30–35 minutes: usually 4–6 exercises and 10–14 working sets. He trains upper body 4–5 days a week, so each session doesn't need to do everything.
+- TIME LIMIT: the whole workout must fit in his time limit (given below), counting everything: about 45 s to set up each exercise, about 75 s of his own warm-up sets before each main lift, each working set (about 40 s; one-arm exercises about 80 s since both sides are done), and the rests between sets. That's usually 4–5 exercises and 10–12 working sets for 30 minutes. He trains upper body 4–5 days a week, so each session doesn't need to do everything. The app trims plans that run over, cutting accessories first.
 - Rest (rest_seconds per exercise): 120–180 s for main presses and pulls, 60–90 s for accessories, 30–45 s for posture work.
 - ORDER BY EQUIPMENT: all dumbbell/bench exercises first, then all cable-machine exercises. Never send him back to the dumbbells or benches once he's at the cable machine. Bodyweight moves like chin tucks go at the end. His gym has a single cable machine.
 - No floor exercises (push-ups, floor press) unless his notes ask for them; they're left out of the list below by default.
@@ -224,6 +224,8 @@ export async function requestPlan(s: AppState, opts: { dayType?: DayType } = {})
   const settings = s.settings;
   const user = `ABOUT ME (written by the lifter):
 ${settings.aboutMe}
+
+TIME LIMIT: ${settings.sessionMinutes} minutes per workout, everything included.
 
 EQUIPMENT
 Dumbbells (lb, per hand): ${settings.dumbbells.join(', ')}

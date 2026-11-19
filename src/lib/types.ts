@@ -36,6 +36,8 @@ export interface Exercise {
   legs?: boolean;
   /** Done lying or kneeling on the floor — left out unless floor work is switched on. */
   floor?: boolean;
+  /** One arm at a time: a set covers both sides, so it takes about twice as long. */
+  unilateral?: boolean;
   images: string[];
   steps: string[];
   feel: { main: string[]; also: string[] };
@@ -131,6 +133,8 @@ export interface Settings {
   includeLegs: boolean;
   /** Push-ups, floor press: off by default. */
   allowFloor: boolean;
+  /** Time limit for a workout, including warm-up sets and rests. */
+  sessionMinutes: number;
   sound: boolean;
   /** Free text the coach reads every time — goals, injuries, likes, dislikes. */
   aboutMe: string;

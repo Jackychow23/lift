@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   includeLegs: false,
   allowFloor: false,
+  sessionMinutes: 30,
   sound: true,
   aboutMe: DEFAULT_ABOUT_ME,
   spanishFocus: DEFAULT_SPANISH_FOCUS

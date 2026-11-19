@@ -7,7 +7,7 @@ import Sheet from '../components/Sheet';
 import { EXERCISE_BY_ID } from '../data/exercises';
 import { keepScreenOn, primeAudio, rearmOnVisible } from '../lib/device';
 import { useNow } from '../lib/hooks';
-import { alternatives, blockExercises, cableSwap, finished, isCalibrating, lastLogFor, nextSet, nextTarget, setCounts, station } from '../lib/planner';
+import { alternatives, blockExercises, cableSwap, finished, isCalibrating, lastLogFor, nextSet, nextTarget, remainingSeconds, setCounts, station } from '../lib/planner';
 import { GROUP_LABEL, describeBlocks, restText } from '../components/blocks';
 import { useStore } from '../lib/store';
 import type { Session } from '../lib/types';
@@ -124,6 +124,9 @@ export default function Workout({ nav }: { nav: Nav }) {
   };
 
   const elapsed = (now - new Date(session.startedAt).getTime()) / 1000;
+  const left = remainingSeconds(session);
+  const limit = state.settings.sessionMinutes * 60;
+  const overBy = Math.round((elapsed + left - limit) / 60);
   const lastText = (exId: string, si: number) => {
     const log = lastLogFor(history, exId);
     const set = log?.sets.filter((x) => x.done)[si] ?? log?.sets.filter((x) => x.done).slice(-1)[0];
@@ -139,7 +142,7 @@ export default function Workout({ nav }: { nav: Nav }) {
         </button>
         <div className="center">
           <span style={{ fontSize: 16, fontWeight: 600 }}>{session.title}</span>
-          <span className="small num">{fmtClock(elapsed)} elapsed</span>
+          <span className="small num">{fmtClock(elapsed)} elapsed · ~{Math.max(0, Math.round(left / 60))} min left</span>
         </div>
         <button type="button" className="btn link" onClick={() => setConfirm('finish')}>
           Finish
@@ -150,6 +153,15 @@ export default function Workout({ nav }: { nav: Nav }) {
           <div className="progress"><div style={{ width: `${counts.total ? (counts.done / counts.total) * 100 : 0}%` }} /></div>
           <span className="small">{counts.done} of {counts.total} sets</span>
         </div>
+
+        {overBy >= 2 && pointer && (
+          <div className="banner" role="status">
+            <span className="dot" style={{ background: 'var(--accent)', marginTop: 6 }} />
+            <span>
+              Running about {overBy} min over your {state.settings.sessionMinutes} min. It's fine to drop the last exercise or a set; tap <strong style={{ color: 'var(--text)' }}>Finish</strong> when you're out of time. The next plan adjusts.
+            </span>
+          </div>
+        )}
 
         {(hasCable || session.cableBusy) && (
           <div className="stack" style={{ gap: 6 }}>

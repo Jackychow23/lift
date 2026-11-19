@@ -4,6 +4,7 @@ import { DEFAULT_ABOUT_ME, DEFAULT_SPANISH_FOCUS, freshState } from '../lib/defa
 import { useOnline } from '../lib/hooks';
 import { stats } from '../lib/srs';
 import { exportJson, importJson } from '../lib/storage';
+import { fitToTime } from '../lib/planner';
 import { useStore } from '../lib/store';
 import type { EquipmentKey, Settings } from '../lib/types';
 import { fmtDate } from '../lib/util';
@@ -117,6 +118,32 @@ export default function SettingsScreen() {
           <textarea className="input" value={s.aboutMe} onChange={(e) => set({ aboutMe: e.target.value })} />
         </label>
         <button type="button" className="btn ghost" style={{ alignSelf: 'flex-start' }} onClick={() => set({ aboutMe: DEFAULT_ABOUT_ME })}>Reset to original</button>
+      </section>
+
+      <section className="card stack" aria-label="Workout length">
+        <span style={{ fontSize: 15, fontWeight: 600 }}>Workout length</span>
+        <label className="field">
+          <span>Minutes per workout, everything included</span>
+          <input
+            className="input"
+            type="number"
+            inputMode="numeric"
+            min={15}
+            max={120}
+            value={s.sessionMinutes}
+            onChange={(e) => {
+              const mins = Math.round(Number(e.target.value));
+              if (!(mins >= 15 && mins <= 120)) return;
+              // Trim today's plan right away if it no longer fits; new plans are written to fit.
+              update((st) => ({
+                ...st,
+                settings: { ...st.settings, sessionMinutes: mins },
+                plan: st.plan && !st.active ? { ...st.plan, blocks: fitToTime(st.plan.blocks, mins * 60) } : st.plan
+              }));
+            }}
+          />
+        </label>
+        <p className="small" style={{ margin: 0, lineHeight: 1.5 }}>Plans count set-up, your warm-up sets, every set and the rests, and trim accessories first if it won't fit.</p>
       </section>
 
       <section className="card stack-lg" aria-label="Equipment">

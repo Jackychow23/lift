@@ -118,6 +118,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'cable_chest_press',
+    unilateral: true,
     name: 'Standing Cable Chest Press',
     pattern: 'h_push',
     load: 'cable',
@@ -181,6 +182,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'db_one_arm_shoulder_press',
+    unilateral: true,
     name: 'One-Arm Dumbbell Shoulder Press',
     pattern: 'v_push',
     load: 'dumbbell',
@@ -201,6 +203,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'cable_shoulder_press',
+    unilateral: true,
     name: 'Cable Shoulder Press',
     pattern: 'v_push',
     load: 'cable',
@@ -221,6 +224,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'cable_lateral_raise',
+    unilateral: true,
     name: 'Cable Lateral Raise',
     pattern: 'shoulders',
     load: 'cable',
@@ -343,6 +347,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'one_arm_db_row',
+    unilateral: true,
     name: 'One-Arm Dumbbell Row',
     pattern: 'h_pull',
     load: 'dumbbell',
@@ -383,6 +388,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'cable_one_arm_row',
+    unilateral: true,
     name: 'One-Arm Cable Row',
     pattern: 'h_pull',
     load: 'cable',
@@ -466,6 +472,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'one_arm_pulldown',
+    unilateral: true,
     name: 'One-Arm Cable Pulldown',
     pattern: 'v_pull',
     load: 'cable',
@@ -627,6 +634,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'cable_rear_delt_fly',
+    unilateral: true,
     name: 'Cable Rear Delt Fly',
     pattern: 'posture',
     load: 'cable',
@@ -667,6 +675,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'cable_external_rotation',
+    unilateral: true,
     name: 'Cable External Rotation',
     pattern: 'posture',
     load: 'cable',

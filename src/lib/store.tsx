@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { requestCards, requestContexts, requestPlan, requestStories } from './claude';
-import { buildBuiltinPlan, startSession, toStraightSets } from './planner';
+import { buildBuiltinPlan, estimateSeconds, fitToTime, startSession, toStraightSets } from './planner';
 import { allCards, contextsFor, stats } from './srs';
 import { loadState, requestPersistence, saveState } from './storage';
 import type { AppState, Plan } from './types';
@@ -128,6 +128,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // then ask Claude for a fresh plan written the new way.
       const fixed = ready.plan && !ready.active ? toStraightSets(ready.plan) : { plan: ready.plan, changed: false };
       if (fixed.changed) ready = { ...ready, plan: fixed.plan };
+      // Make sure a saved plan fits the time limit.
+      if (ready.plan && !ready.active && estimateSeconds(ready.plan.blocks) > ready.settings.sessionMinutes * 60)
+        ready = { ...ready, plan: { ...ready.plan, blocks: fitToTime(ready.plan.blocks, ready.settings.sessionMinutes * 60) } };
       commit(ready);
       lastAuto.current = Date.now();
       void refreshPlan(fixed.changed);

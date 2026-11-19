@@ -7,6 +7,8 @@ import {
   buildBonusPlan,
   buildBuiltinPlan,
   nextDayType,
+  estimateSeconds,
+  remainingSeconds,
   cableSwap,
   nextSet,
   nextTarget,
@@ -117,6 +119,47 @@ describe('built-in planner', () => {
     }
   });
 
+  it('built-in days fit the 30-minute limit, and a shorter limit trims accessories first', () => {
+    const s = freshState();
+    for (const day of ['A', 'B'] as const) expect(estimateSeconds(buildBuiltinPlan(s, day).blocks)).toBeLessThanOrEqual(30 * 60);
+    s.settings.sessionMinutes = 20;
+    const short = buildBuiltinPlan(s, 'A');
+    expect(estimateSeconds(short.blocks)).toBeLessThanOrEqual(20 * 60);
+    const ids = short.blocks.map((b) => b.items[0].exerciseId);
+    expect(ids).toContain('db_bench_press');
+    expect(ids).toContain('chin_tuck');
+  });
+
+  it('time left starts at the plan estimate and goes down as sets are logged', () => {
+    const plan = buildBuiltinPlan(freshState());
+    const sess = startSession(plan);
+    expect(remainingSeconds(sess)).toBe(estimateSeconds(plan.blocks));
+    sess.exercises[0].sets[0].done = true;
+    expect(remainingSeconds(sess)).toBeLessThan(estimateSeconds(plan.blocks));
+  });
+
+  it('a 15-set paired plan like the first workout would have been trimmed to fit', () => {
+    const s = freshState();
+    const plan = sanitizePlan(
+      {
+        title: 'Upper A', focus: 'x', note: 'n',
+        exercises: [
+          { exercise_id: 'db_bench_press', sets: 3, reps: 8, weight: 30, rest_seconds: 150 },
+          { exercise_id: 'one_arm_db_row', sets: 3, reps: 8, weight: 35, rest_seconds: 150 },
+          { exercise_id: 'db_hammer_curl', sets: 3, reps: 10, weight: 20, rest_seconds: 90 },
+          { exercise_id: 'seated_cable_row', sets: 3, reps: 8, weight: 80, rest_seconds: 150 },
+          { exercise_id: 'cable_pushdown', sets: 3, reps: 12, weight: 40, rest_seconds: 90 },
+          { exercise_id: 'face_pull', sets: 2, reps: 15, weight: 25, rest_seconds: 45 },
+          { exercise_id: 'chin_tuck', sets: 2, reps: 10, weight: 0, rest_seconds: 30, hold_seconds: 5 }
+        ]
+      },
+      s,
+      'A'
+    );
+    expect(estimateSeconds(plan.blocks)).toBeLessThanOrEqual(30 * 60);
+    expect(plan.blocks[0].items[0].exerciseId).toBe('db_bench_press');
+  });
+
   it('swap options always include cable ones, and leave out floor work unless allowed', () => {
     const s = freshState();
     for (const id of ['db_bench_press', 'db_shoulder_press', 'one_arm_db_row', 'db_hammer_curl', 'db_overhead_triceps', 'rear_delt_fly']) {
@@ -155,7 +198,8 @@ describe('guardrails on Claude plans', () => {
     expect(items.map((i) => i.exerciseId)).not.toContain('made_up');
     expect(items.some((i) => EXERCISE_BY_ID[i.exerciseId].legs)).toBe(false);
     const bench = items.find((i) => i.exerciseId === 'db_bench_press')!;
-    expect(bench.sets).toBe(5);
+    expect(bench.sets).toBeLessThanOrEqual(5); // capped at 5, then trimmed to fit the time limit
+    expect(bench.sets).toBeGreaterThanOrEqual(2);
     expect(bench.weight).toBe(40); // start 30 + two notches max during calibration
     expect(items.find((i) => i.exerciseId === 'seated_cable_row')!.weight).toBe(85);
     // dumbbell work moved ahead of cable work

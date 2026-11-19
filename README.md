@@ -40,7 +40,8 @@ The key stays on the phone. It's never put in backups and never sent anywhere ex
 ## How the training works
 
 - **Calibration (first 8 workouts):** weights start light and climb faster while the app finds your working weights. After that, Claude writes a short weak-points note on the Progress screen and refreshes it monthly.
-- **Days:** Upper A (bench + row) and Upper B (overhead press + pulldown) alternate, 4–5 days a week. About 12 working sets, roughly 30–35 minutes.
+- **Days:** Upper A (bench + row) and Upper B (overhead press + pulldown) alternate, 4–5 days a week.
+- **Time limit:** every plan is built to fit **Settings → Workout length** (30 min by default), counting set-up, your warm-up sets, each set and the rests; accessories are cut first if it won't fit. During a workout the top bar shows time left, and a note appears if you're running long.
 - **One exercise at a time:** finish all sets of an exercise, then move on. The rests are longer (about 2½ min for main lifts, 75 s for accessories, 30–45 s for posture work), which is time for the Spanish cards.
 - **Equipment order:** all the dumbbell/bench work comes first, then everything at the cable machine, so you never walk back to the benches. Claude's plans are put in that order too.
 - **Swapping:** the swap list always shows cable options first, then dumbbell ones. Floor work (push-ups, floor press) is left out unless you switch it on in Settings.

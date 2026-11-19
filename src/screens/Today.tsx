@@ -4,7 +4,7 @@ import PlanList from '../components/PlanList';
 import { CALIBRATION_SESSIONS } from '../lib/defaults';
 import { primeAudio } from '../lib/device';
 import { useOnline } from '../lib/hooks';
-import { buildBonusPlan, buildBuiltinPlan, isCalibrating, regularCount, setCounts, weekInfo } from '../lib/planner';
+import { buildBonusPlan, buildBuiltinPlan, estimateMinutes, isCalibrating, regularCount, setCounts, weekInfo } from '../lib/planner';
 import { useStore } from '../lib/store';
 import { daysBetween } from '../lib/util';
 
@@ -64,7 +64,7 @@ export default function Today({ nav }: { nav: Nav }) {
         <>
           <div className="stack" style={{ gap: 6 }}>
             <h1 className="h1">{plan.title}</h1>
-            {plan.focus && <p className="sub">{plan.focus} · about 30 min</p>}
+            <p className="sub">{plan.focus ? `${plan.focus} · ` : ''}about {estimateMinutes(plan.blocks)} min</p>
           </div>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {isCalibrating(state) && <span className="chip">Calibration · {n + 1} of {CALIBRATION_SESSIONS}</span>}
