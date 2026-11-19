@@ -7,7 +7,8 @@ import Sheet from '../components/Sheet';
 import { EXERCISE_BY_ID } from '../data/exercises';
 import { keepScreenOn, primeAudio, rearmOnVisible } from '../lib/device';
 import { useNow } from '../lib/hooks';
-import { alternatives, finished, isCalibrating, lastLogFor, nextSet, nextTarget, setCounts } from '../lib/planner';
+import { alternatives, blockExercises, cableSwap, finished, isCalibrating, lastLogFor, nextSet, nextTarget, setCounts } from '../lib/planner';
+import { describeBlocks } from '../components/blocks';
 import { useStore } from '../lib/store';
 import type { Session } from '../lib/types';
 import { fmtClock } from '../lib/util';
@@ -18,6 +19,7 @@ export default function Workout({ nav }: { nav: Nav }) {
   const now = useNow(1000);
   const [swapFor, setSwapFor] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<'finish' | 'discard' | null>(null);
+  const [cableMsg, setCableMsg] = useState<string | null>(null);
 
   useEffect(() => {
     void keepScreenOn(true);
@@ -62,7 +64,7 @@ export default function Workout({ nav }: { nav: Nav }) {
       set.done = true;
       set.doneAt = new Date().toISOString();
       const remaining = nextSet(s);
-      s.rest = remaining ? { endsAt: Date.now() + block.restSeconds * 1000, total: block.restSeconds } : null;
+      s.rest = remaining ? { endsAt: Date.now() + block.restSeconds * 1000, total: block.restSeconds, lastExerciseId: s.exercises[ei].exerciseId } : null;
     });
     // Next set inherits a weight change he made on this one.
     edit((s) => {
@@ -99,6 +101,22 @@ export default function Workout({ nav }: { nav: Nav }) {
     setSwapFor(null);
   };
 
+  const toggleCable = () => {
+    const on = !session.cableBusy;
+    const { session: next, changes } = cableSwap(session, state.settings, history, isCalibrating(state), on);
+    update((st) => (st.active ? { ...st, active: next } : st));
+    const name = (id: string) => EXERCISE_BY_ID[id]?.name ?? id;
+    setCableMsg(
+      changes.length
+        ? changes.map(([a, b]) => `${name(a)} → ${name(b)}`).join(' · ')
+        : on
+          ? 'No cable exercises left to swap.'
+          : 'Nothing to swap back.'
+    );
+  };
+  const hasCable = session.exercises.some((e) => EXERCISE_BY_ID[e.exerciseId]?.load === 'cable' || e.originalExerciseId);
+  const views = describeBlocks(session.blocks.map((b, bi) => ({ kind: b.kind, ids: blockExercises(session, bi).idx.map((i) => session.exercises[i].exerciseId) })));
+
   const finish = () => {
     const id = finishWorkout();
     if (id) nav.replace({ name: 'done', sessionId: id });
@@ -133,14 +151,31 @@ export default function Workout({ nav }: { nav: Nav }) {
           <span className="small">{counts.done} of {counts.total} sets</span>
         </div>
 
+        {(hasCable || session.cableBusy) && (
+          <div className="stack" style={{ gap: 6 }}>
+            <button type="button" className={`cable-toggle${session.cableBusy ? ' on' : ''}`} aria-pressed={!!session.cableBusy} onClick={toggleCable}>
+              <span className="stack" style={{ gap: 2 }}>
+                <span style={{ fontSize: 15, fontWeight: 600 }}>{session.cableBusy ? 'Cable machine taken · swapped' : 'Cable machine taken?'}</span>
+                <span className="small">{session.cableBusy ? 'Tap to switch back to the cable exercises you haven’t started' : 'Swap every cable exercise you haven’t started for a dumbbell one'}</span>
+              </span>
+              <span className="small" style={{ color: 'var(--accent)', fontWeight: 700, flex: 'none' }}>{session.cableBusy ? 'Undo' : 'Swap'}</span>
+            </button>
+            {cableMsg && <span className="small" aria-live="polite" style={{ padding: '0 4px', lineHeight: 1.45 }}>{cableMsg}</span>}
+          </div>
+        )}
+
         {session.blocks.map((b, bi) => {
-          const idx = session.exercises.map((e, i) => (e.blockIndex === bi ? i : -1)).filter((i) => i >= 0);
+          const { idx } = blockExercises(session, bi);
           if (!idx.length) return null;
+          const v = views[bi];
           return (
             <div className="stack" key={bi} style={{ gap: 10 }}>
-              <div className="between" style={{ padding: '0 4px' }}>
-                <span className="label">{b.label}{b.kind === 'pair' && idx.length > 1 ? ' · alternate these' : ''}</span>
-                <span className="small">{b.restSeconds} s rest</span>
+              <div className="stack" style={{ gap: 2, padding: '0 4px' }}>
+                <div className="between">
+                  <span className="label">{v.title}</span>
+                  <span className="small">{b.restSeconds} s rest between sets</span>
+                </div>
+                {v.how && <span className="small">{v.how}</span>}
               </div>
               {idx.map((ei, k) => {
                 const log = session.exercises[ei];
@@ -148,12 +183,12 @@ export default function Workout({ nav }: { nav: Nav }) {
                 const bw = ex?.load === 'bodyweight';
                 const t = log.sets[0]?.target;
                 const anyDone = log.sets.some((x) => x.done);
-                const tag = b.kind === 'pair' && idx.length > 1 ? `${String.fromCharCode(65 + bi)}${k + 1} · ` : '';
+                const tag = v.tags[k];
                 return (
                   <section className="ex-card" key={ei} aria-label={ex?.name}>
                     <div className="ex-head">
                       <div className="stack" style={{ gap: 2 }}>
-                        <h2 className="h2">{tag}{ex?.name ?? log.exerciseId}</h2>
+                        <h2 className="h2 row" style={{ gap: 8, alignItems: 'flex-start' }}><span className="tag-pill" style={{ marginTop: 1 }}>{tag}</span><span>{ex?.name ?? log.exerciseId}</span></h2>
                         <span className="small">
                           Target {log.sets.filter((x) => !x.extra).length} × {t?.reps}
                           {log.holdSeconds ? ` · ${log.holdSeconds} s hold` : ''}
@@ -223,6 +258,8 @@ export default function Workout({ nav }: { nav: Nav }) {
           endsAt={session.rest.endsAt}
           total={session.rest.total}
           nextLabel={describe(pointer)}
+          lastExerciseId={session.rest.lastExerciseId ?? null}
+          nextExerciseId={pointer ? session.exercises[pointer.ex].exerciseId : null}
           sound={state.settings.sound}
           onAdjust={(d) => edit((s) => { if (s.rest) { s.rest.endsAt += d * 1000; s.rest.total = Math.max(0, s.rest.total + d); } })}
           onClose={() => edit((s) => { s.rest = null; })}

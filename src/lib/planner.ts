@@ -57,9 +57,26 @@ export function alternatives(exId: string, settings: Settings, exclude: string[]
     hinge: ['hinge']
   };
   const order = related[ex.pattern] ?? [ex.pattern];
+  const sameStation = (e: Exercise) => (station(e) === station(ex) ? 0 : 1);
   return EXERCISES.filter((e) => e.id !== exId && !exclude.includes(e.id) && isAvailable(e, settings) && order.includes(e.pattern)).sort(
-    (a, b) => order.indexOf(a.pattern) - order.indexOf(b.pattern)
+    (a, b) => order.indexOf(a.pattern) - order.indexOf(b.pattern) || sameStation(a) - sameStation(b)
   );
+}
+
+// ───────── stations: a pair must stay on one piece of equipment ─────────
+
+export type Station = 'dumbbells' | 'cable' | 'anywhere';
+
+export const station = (ex: Exercise | undefined): Station =>
+  !ex ? 'anywhere' : ex.load === 'cable' ? 'cable' : ex.load === 'dumbbell' ? 'dumbbells' : 'anywhere';
+
+export const STATION_LABEL: Record<Station, string> = { dumbbells: 'Dumbbells', cable: 'Cable machine', anywhere: 'No equipment' };
+
+/** The equipment a group of exercises shares, or null if they'd need two stations. */
+export function sharedStation(ids: string[]): Station | null {
+  const st = [...new Set(ids.map((id) => station(EXERCISE_BY_ID[id])).filter((s) => s !== 'anywhere'))];
+  if (st.length > 1) return null;
+  return st[0] ?? 'anywhere';
 }
 
 function usable(exId: string, settings: Settings, exclude: string[]): string {
@@ -163,18 +180,18 @@ export const TEMPLATES: Record<DayType, { title: string; focus: string; blocks: 
     title: 'Upper A',
     focus: 'Bench + row focus',
     blocks: [
-      { label: 'Pair A', kind: 'pair', restSeconds: 90, items: [{ id: 'db_bench_press', sets: 3 }, { id: 'seated_cable_row', sets: 3 }] },
-      { label: 'Pair B', kind: 'pair', restSeconds: 75, items: [{ id: 'one_arm_db_row', sets: 3 }, { id: 'cable_pushdown', sets: 2 }] },
-      { label: 'Posture finisher', kind: 'finisher', restSeconds: 30, items: [{ id: 'chin_tuck', sets: 2 }, { id: 'face_pull', sets: 2 }] }
+      { label: 'Pair 1', kind: 'pair', restSeconds: 90, items: [{ id: 'db_bench_press', sets: 3 }, { id: 'one_arm_db_row', sets: 3 }] },
+      { label: 'Pair 2', kind: 'pair', restSeconds: 75, items: [{ id: 'seated_cable_row', sets: 3 }, { id: 'cable_pushdown', sets: 2 }] },
+      { label: 'Posture finisher', kind: 'finisher', restSeconds: 30, items: [{ id: 'face_pull', sets: 2 }, { id: 'chin_tuck', sets: 2 }] }
     ]
   },
   B: {
     title: 'Upper B',
     focus: 'Overhead press + pulldown focus',
     blocks: [
-      { label: 'Pair A', kind: 'pair', restSeconds: 90, items: [{ id: 'db_shoulder_press', sets: 3 }, { id: 'lat_pulldown', sets: 3 }] },
-      { label: 'Pair B', kind: 'pair', restSeconds: 75, items: [{ id: 'rear_delt_fly', sets: 3 }, { id: 'db_hammer_curl', sets: 2 }] },
-      { label: 'Posture finisher', kind: 'finisher', restSeconds: 30, items: [{ id: 'chin_tuck', sets: 2 }, { id: 'db_scaption', sets: 2 }] }
+      { label: 'Pair 1', kind: 'pair', restSeconds: 90, items: [{ id: 'db_shoulder_press', sets: 3 }, { id: 'rear_delt_fly', sets: 3 }] },
+      { label: 'Pair 2', kind: 'pair', restSeconds: 75, items: [{ id: 'lat_pulldown', sets: 3 }, { id: 'cable_overhead_triceps', sets: 2 }] },
+      { label: 'Posture finisher', kind: 'finisher', restSeconds: 30, items: [{ id: 'face_pull', sets: 2 }, { id: 'chin_tuck', sets: 2 }] }
     ]
   }
 };
@@ -218,7 +235,7 @@ export function buildBuiltinPlan(s: AppState, dayType: DayType = nextDayType(s))
       ? 'First session: weights start light on purpose. If a set feels easy, add reps; that tells the plan where you really are.'
       : `Calibration ${n + 1} of ${CALIBRATION_SESSIONS}: weights move up fast while we find your level. Add reps whenever a set feels easy.`
     : 'Same rules as always: beat the reps and the weight goes up next time.';
-  return {
+  return splitMixedPairs({
     id: uid(),
     createdAt: new Date().toISOString(),
     source: 'builtin',
@@ -227,7 +244,7 @@ export function buildBuiltinPlan(s: AppState, dayType: DayType = nextDayType(s))
     focus: t.focus,
     note,
     blocks
-  };
+  }).plan;
 }
 
 // ───────── week + bonus day ─────────
@@ -320,18 +337,79 @@ export function startSession(plan: Plan): Session {
   };
 }
 
-/** Next set to do, alternating between the exercises of a pair: A1 s1, A2 s1, A1 s2, … */
+/** Indexes of a block's exercises, and whether they alternate (only when they share one station). */
+export function blockExercises(session: Session, bi: number) {
+  const idx = session.exercises.map((e, i) => (e.blockIndex === bi ? i : -1)).filter((i) => i >= 0);
+  const alternate = idx.length > 1 && sharedStation(idx.map((i) => session.exercises[i].exerciseId)) !== null;
+  return { idx, alternate };
+}
+
+/**
+ * Next set to do. In a pair on one station it alternates: 1a s1, 1b s1, 1a s2, …
+ * If a swap left a pair on two stations, it does them one after the other instead.
+ */
 export function nextSet(session: Session): { ex: number; set: number } | null {
   for (let bi = 0; bi < session.blocks.length; bi++) {
-    const idx = session.exercises.map((e, i) => (e.blockIndex === bi ? i : -1)).filter((i) => i >= 0);
-    const rounds = Math.max(0, ...idx.map((i) => session.exercises[i].sets.length));
-    for (let r = 0; r < rounds; r++)
+    const { idx, alternate } = blockExercises(session, bi);
+    if (alternate) {
+      const rounds = Math.max(0, ...idx.map((i) => session.exercises[i].sets.length));
+      for (let r = 0; r < rounds; r++)
+        for (const i of idx) {
+          const set = session.exercises[i].sets[r];
+          if (set && !set.done) return { ex: i, set: r };
+        }
+    } else {
       for (const i of idx) {
-        const set = session.exercises[i].sets[r];
-        if (set && !set.done) return { ex: i, set: r };
+        const r = session.exercises[i].sets.findIndex((x) => !x.done);
+        if (r >= 0) return { ex: i, set: r };
       }
+    }
   }
   return null;
+}
+
+/** Split any pair that would need two stations into one-at-a-time blocks. */
+export function splitMixedPairs(plan: Plan): { plan: Plan; changed: boolean } {
+  let changed = false;
+  const blocks: PlanBlock[] = [];
+  for (const b of plan.blocks) {
+    if (b.items.length > 1 && sharedStation(b.items.map((i) => i.exerciseId)) === null) {
+      changed = true;
+      b.items.forEach((it, k) => blocks.push({ ...b, label: `${b.label}${String.fromCharCode(97 + k)}`, kind: b.kind === 'finisher' ? 'finisher' : 'single', items: [it] }));
+    } else blocks.push(b);
+  }
+  return { plan: changed ? { ...plan, blocks } : plan, changed };
+}
+
+/**
+ * "Cable machine taken": swap every cable exercise that hasn't been started for a
+ * non-cable stand-in (or, with on=false, swap back to the originals).
+ */
+export function cableSwap(session: Session, settings: Settings, history: Session[], calibrating: boolean, on: boolean) {
+  const next: Session = structuredClone(session);
+  const changes: [string, string][] = [];
+  next.exercises.forEach((log) => {
+    if (log.sets.some((x) => x.done)) return;
+    let to: string | undefined;
+    if (on && EXERCISE_BY_ID[log.exerciseId]?.load === 'cable') {
+      const used = next.exercises.map((e) => e.exerciseId);
+      to = alternatives(log.exerciseId, settings, used).find((e) => e.load !== 'cable')?.id;
+      if (to) log.originalExerciseId = log.exerciseId;
+    } else if (!on && log.originalExerciseId) {
+      to = log.originalExerciseId;
+      log.originalExerciseId = undefined;
+    }
+    if (!to) return;
+    const ex = EXERCISE_BY_ID[to];
+    const t = nextTarget(ex, history, settings, calibrating);
+    changes.push([log.exerciseId, to]);
+    log.exerciseId = to;
+    log.holdSeconds = ex.holdSeconds;
+    log.note = undefined;
+    log.sets = log.sets.map((x) => ({ target: { weight: t.weight, reps: t.reps }, weight: t.weight, reps: t.reps, done: false, extra: x.extra }));
+  });
+  next.cableBusy = on;
+  return { session: next, changes };
 }
 
 export const setCounts = (session: Session) => {
@@ -384,7 +462,7 @@ export function sanitizePlan(raw: RawPlan, s: AppState, dayType: DayType): Plan 
     blocks.push({ label: String(b.label || `Block ${blocks.length + 1}`).slice(0, 40), kind, restSeconds: rest, items });
   }
   if (!blocks.length) throw new Error('Plan had no usable exercises');
-  return {
+  return splitMixedPairs({
     id: uid(),
     createdAt: new Date().toISOString(),
     source: 'claude',
@@ -393,5 +471,5 @@ export function sanitizePlan(raw: RawPlan, s: AppState, dayType: DayType): Plan 
     focus: String(raw.focus || '').slice(0, 80),
     note: String(raw.note || '').slice(0, 280),
     blocks
-  };
+  }).plan;
 }

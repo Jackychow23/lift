@@ -86,6 +86,8 @@ export interface SetLog {
 
 export interface ExerciseLog {
   exerciseId: string;
+  /** Set when the exercise was swapped for "cable machine taken", so it can be swapped back. */
+  originalExerciseId?: string;
   blockIndex: number;
   holdSeconds?: number;
   note?: string;
@@ -104,7 +106,9 @@ export interface Session {
   blocks: { label: string; kind: BlockKind; restSeconds: number }[];
   exercises: ExerciseLog[];
   /** Running rest timer, kept so it survives leaving the app. */
-  rest?: { endsAt: number; total: number } | null;
+  rest?: { endsAt: number; total: number; lastExerciseId?: string } | null;
+  /** "Cable machine taken" is on for this workout. */
+  cableBusy?: boolean;
 }
 
 export type WallTest = 'easy' | 'effort' | 'not_yet';
@@ -140,6 +144,28 @@ export interface SpanishCard {
   sentenceEn: string;
   level: number;
   cat: string;
+  /** Memory hook for English speakers (a related English word or a vivid picture). */
+  hook?: string;
+}
+
+/** Another sentence that uses a card's word, so it isn't always the same one. */
+export interface Context {
+  es: string;
+  en: string;
+}
+
+/** A 2–3 sentence reading with one comprehension question. Written by Claude, stored for offline. */
+export interface Story {
+  id: string;
+  es: string;
+  en: string;
+  question: string;
+  options: string[];
+  answerIndex: number;
+  gloss: Context[];
+  createdAt: string;
+  seenAt?: string;
+  correct?: boolean;
 }
 
 export interface CardProgress {
@@ -156,6 +182,9 @@ export interface SpanishState {
   extraCards: SpanishCard[];
   /** Most recent answers, true = correct (newest last, max 30). */
   recent: boolean[];
+  /** Extra sentences per card id, written by Claude. */
+  contexts: Record<string, Context[]>;
+  stories: Story[];
 }
 
 export interface Assessment {

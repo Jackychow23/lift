@@ -300,7 +300,47 @@ export const EXERCISES: Exercise[] = [
       { where: 'Mostly biceps', fix: 'Pulling toward the chest. Pull toward the hip, leading with the elbow.' }
     ]
   },
+  {
+    id: 'db_bent_over_row',
+    name: 'Bent-Over Dumbbell Row',
+    pattern: 'h_pull',
+    load: 'dumbbell',
+    needs: [],
+    repRange: [6, 10],
+    start: 30,
+    images: img('db_bent_over_row'),
+    steps: [
+      'Hold a dumbbell in each hand, palms facing in. Hinge at the hips until your chest is about 45° to the floor, knees soft, back flat.',
+      'Row both dumbbells toward your hips, squeezing your shoulder blades together.',
+      'Lower until your arms are straight without letting your back round.'
+    ],
+    feel: { main: ['Middle back', 'Lats'], also: ['Rear shoulders', 'Biceps', 'Hamstrings (holding the hinge)'] },
+    notFeel: [
+      { where: 'Lower back', fix: 'Back is rounding or you are standing up as you row. Brace, keep the hinge still, go lighter.' },
+      { where: 'Neck', fix: 'Looking up at the mirror. Keep your eyes on the floor a little ahead of you.' }
+    ]
+  },
   // ───────── Vertical pull ─────────
+  {
+    id: 'db_pullover',
+    name: 'Dumbbell Pullover',
+    pattern: 'v_pull',
+    load: 'dumbbell',
+    needs: ['flat_bench'],
+    repRange: [8, 12],
+    start: 25,
+    images: img('db_pullover'),
+    steps: [
+      'Lie on the bench holding one dumbbell with both hands over your chest, elbows slightly bent.',
+      'Lower it back behind your head in an arc until you feel a stretch along your sides.',
+      'Pull it back over your chest using your lats, keeping the elbow bend the same.'
+    ],
+    feel: { main: ['Lats (sides of the back)'], also: ['Chest', 'Triceps'] },
+    notFeel: [
+      { where: 'Front of the shoulder', fix: 'Going too far back. Stop when your arms are about level with your head.' },
+      { where: 'Lower back', fix: 'Ribs flaring and back arching. Keep your ribs down and lower less far.' }
+    ]
+  },
   {
     id: 'lat_pulldown',
     name: 'Lat Pulldown',

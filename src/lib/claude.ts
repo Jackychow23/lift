@@ -2,8 +2,8 @@
 import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises';
 import { CALIBRATION_SESSIONS } from './defaults';
 import { finished, isAvailable, isCalibrating, nextDayType, regularCount, sanitizePlan, weekInfo, type RawPlan } from './planner';
-import { allCards, cleanNewCards, recentAccuracy, stats } from './srs';
-import type { AppState, Assessment, DayType, Plan, Settings, SpanishCard } from './types';
+import { allCards, cleanContexts, cleanNewCards, cleanStories, recentAccuracy, stats } from './srs';
+import type { AppState, Assessment, Context, DayType, Plan, Settings, SpanishCard, Story } from './types';
 import { daysBetween } from './util';
 
 const API = 'https://api.anthropic.com/v1/messages';
@@ -64,10 +64,11 @@ const COACH_SYSTEM = `You are the strength coach inside a personal, offline-firs
 How the app works:
 - He logs only weight and reps per set. He does not rate difficulty. When a set feels easy he adds reps or an extra set; when it's too hard he lowers the weight. Read his logs with that in mind: reps above target or extra sets mean "too easy", a lower weight than planned means "too heavy".
 - Dumbbell weights are PER HAND and must come from his dumbbell list. Cable weights are the stack number in his increments. Bodyweight moves use weight 0.
-- Rest timers run between sets. In a pair he alternates the two exercises (A1, A2, A1, A2…), so each muscle rests about twice the pair's rest time.
+- Rest timers run between sets. In a pair he alternates the two exercises (1a, 1b, 1a, 1b…), so each muscle rests about twice the pair's rest time.
 
 Rules for every plan:
-- About 30 minutes: two antagonist pairs (a press with a pull) and a short posture finisher. 13–16 working sets total. Pair rest 75–90 s; finisher rest 30–45 s.
+- About 30 minutes: two antagonist pairs (a press with a pull) and a short posture finisher.
+- EQUIPMENT RULE: both exercises in a pair (and in the finisher) must use the same station — both dumbbell, or both cable. Bodyweight moves (chin tucks, push-ups) can go with either. Never pair a cable exercise with a dumbbell one. His gym has a single cable machine that's often busy, so keep all cable work in back-to-back blocks so he only uses it once per workout. Each exercise's load is in the list below. 13–16 working sets total. Pair rest 75–90 s; finisher rest 30–45 s.
 - No warm-up section. He warms up by doing a lighter set or two of the first exercise in each pair before his working sets (not logged), so put the heaviest lifts first in each pair and don't add separate warm-up exercises.
 - Strength focus: main lifts mostly 5–10 reps; accessories 10–15; posture work 12–20.
 - Posture (forward head): every session includes chin tucks plus one upper-back/rear-shoulder exercise. Across the week, pulling sets should be at least equal to pressing sets.
@@ -229,7 +230,7 @@ export async function requestCards(s: AppState, count = 20): Promise<SpanishCard
   const targetLevel = Math.max(1, Math.min(5, st.level + (acc !== null && acc > 0.85 ? 1 : 0)));
   const user = `He has ${st.seen} words in rotation, ${st.mastered} well learned. Recent accuracy: ${acc === null ? 'not enough data' : Math.round(acc * 100) + '%'}.
 Aim new cards at level ${targetLevel} (1 = very first words, 2 = simple past/near future, 3 = everyday conversation).
-Words he finds hard: ${weak.join(', ') || 'none yet'}. Include a few cards that reuse those words in new sentences, with a different target word.
+Words he finds hard: ${weak.join(', ') || 'none yet'}. Include a few cards that reuse those words in new sentences, with a different target word. Give every card a memory hook.
 Words he already has (do not repeat as targets): ${known.join(', ')}
 
 Write ${count} new cards with add_cards.`;
@@ -255,7 +256,8 @@ Write ${count} new cards with add_cards.`;
                   es: { type: 'string', description: 'Spanish sentence using the word' },
                   sentence_en: { type: 'string', description: 'English meaning of the sentence' },
                   level: { type: 'integer' },
-                  category: { type: 'string', description: 'One word, e.g. body, gym, food, verb, time, travel' }
+                  category: { type: 'string', description: 'One word, e.g. body, gym, food, verb, time, travel' },
+                  hook: { type: 'string', description: 'Memory hook for an English speaker: a related English word (e.g. mano → manual) or a quick vivid picture. Never invent a false etymology; say "think of" for associations.' }
                 }
               }
             }
@@ -268,6 +270,102 @@ Write ${count} new cards with add_cards.`;
   });
   const raw = toolInput<{ cards: unknown }>(resp, 'add_cards');
   return cleanNewCards(raw.cards, s.spanish);
+}
+
+/** More sentences for words he's learning, so each review shows the word in a new context. */
+export async function requestContexts(s: AppState, cards: SpanishCard[]): Promise<Record<string, Context[]>> {
+  if (!cards.length) return s.spanish.contexts;
+  const known = allCards(s.spanish).filter((c) => s.spanish.progress[c.id]?.box >= 1).map((c) => c.word);
+  const user = `Words he knows so far: ${known.join(', ')}
+
+For EACH of these words, write 2 new short Spanish sentences that use it in a different way than its current example (different situation, different form if natural — plural, other verb person, question vs statement). Keep the rest of each sentence to very common words, ideally ones from the known list. 3–9 words each.
+${cards.map((c) => `- ${c.word} (${c.en}); current example: ${c.es}`).join('\n')}
+
+Answer with add_sentences.`;
+  const resp = await callClaude(s.settings, {
+    max_tokens: 3000,
+    system: SPANISH_SYSTEM,
+    tools: [
+      {
+        name: 'add_sentences',
+        description: 'Add example sentences for existing words.',
+        input_schema: {
+          type: 'object',
+          required: ['items'],
+          properties: {
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['word', 'sentences'],
+                properties: {
+                  word: { type: 'string', description: 'The word exactly as given' },
+                  sentences: {
+                    type: 'array',
+                    items: { type: 'object', required: ['es', 'en'], properties: { es: { type: 'string' }, en: { type: 'string' } } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ],
+    tool_choice: { type: 'tool', name: 'add_sentences' },
+    messages: [{ role: 'user', content: user }]
+  });
+  return cleanContexts(toolInput<{ items: unknown }>(resp, 'add_sentences').items, s.spanish);
+}
+
+/** Short readings built mostly from words he knows — comprehensible input between sets. */
+export async function requestStories(s: AppState, count = 6): Promise<Story[]> {
+  const known = allCards(s.spanish).filter((c) => s.spanish.progress[c.id]?.box >= 1).map((c) => c.word);
+  const st = stats(s.spanish);
+  const user = `He has ${known.length} words in rotation (${st.mastered} well learned): ${known.join(', ') || 'only a few so far'}.
+
+Write ${count} mini-stories with add_stories. Each:
+- 2–3 short sentences in Spanish (Mexican Spanish), present tense unless he clearly knows past forms. About 90% of the words should be from his list or very common words (el, la, y, es, está, en, con, a, de, muy, no, sí, mi, tu, un, una, hoy).
+- At most 2 words he doesn't know yet; list them in new_words with English.
+- One comprehension question IN ENGLISH about the story with 4 short options, exactly one correct, the wrong ones plausible.
+- Everyday or gym topics. Vary the topics and the people (a friend, a coworker, a dog, a trainer…). Not about the lifter himself.
+- "en" is a natural English translation of the whole story.`;
+  const resp = await callClaude(s.settings, {
+    max_tokens: 3000,
+    system: SPANISH_SYSTEM,
+    tools: [
+      {
+        name: 'add_stories',
+        description: 'Add short reading stories.',
+        input_schema: {
+          type: 'object',
+          required: ['stories'],
+          properties: {
+            stories: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['es', 'en', 'question', 'options', 'answer_index', 'new_words'],
+                properties: {
+                  es: { type: 'string' },
+                  en: { type: 'string' },
+                  question: { type: 'string' },
+                  options: { type: 'array', items: { type: 'string' } },
+                  answer_index: { type: 'integer', description: '0-based index of the correct option' },
+                  new_words: {
+                    type: 'array',
+                    items: { type: 'object', required: ['es', 'en'], properties: { es: { type: 'string' }, en: { type: 'string' } } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ],
+    tool_choice: { type: 'tool', name: 'add_stories' },
+    messages: [{ role: 'user', content: user }]
+  });
+  return cleanStories(toolInput<{ stories: unknown }>(resp, 'add_stories').stories);
 }
 
 export const exerciseName = (id: string) => EXERCISE_BY_ID[id]?.name ?? id;

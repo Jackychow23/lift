@@ -41,6 +41,9 @@ The key stays on the phone. It's never put in backups and never sent anywhere ex
 
 - **Calibration (first 8 workouts):** weights start light and climb faster while the app finds your working weights. After that, Claude writes a short weak-points note on the Progress screen and refreshes it monthly.
 - **Days:** Upper A (bench + row) and Upper B (overhead press + pulldown) alternate. Each is two push/pull pairs plus a posture finisher (chin tucks + upper back), about 30 minutes.
+- **Pairs:** do one set of each exercise, back and forth (1a, 1b, 1a, 1b…). Both exercises in a pair always use the same equipment, either the dumbbells or the cable machine, so you never hold two stations. If a swap leaves a pair on two kinds of equipment, the app switches that pair to one exercise at a time.
+- **Cable machine taken:** one button in the workout swaps every cable exercise you haven't started for a dumbbell one. Tap it again to swap back.
+- **Rest screen:** besides the Spanish card, it has buttons for the form notes of the exercise you just did and the next one.
 - **Bonus day:** after 4 workouts in a week (Mon–Sun), an optional bonus repeats that week's weakest workout with the same targets.
 - **Progression:**
   - Beat the top of the rep range → the weight goes up.
@@ -56,7 +59,10 @@ The key stays on the phone. It's never put in backups and never sent anywhere ex
 
 ## Spanish cards
 
-- Each card teaches a word inside a short sentence, as multiple choice.
+- Each card teaches a word inside a short sentence, as multiple choice. Every built-in word has a memory hook (e.g. mano → manual); tap **Hint** to see it first. A right answer after a hint doesn't move the card up.
+- The same word shows up in different sentences on later reviews: other deck sentences that use it, plus new ones Claude writes.
+- Question types rotate: what the word means, fill in the blank, what the whole sentence means, and how to say it in Spanish.
+- Every few cards, a 2–3 sentence mini-story (written by Claude from words you know, saved for offline) checks real reading.
 - Missed cards come back within minutes; known ones come back days or weeks later.
 - New words arrive only while recent accuracy is good.
 - Cards move on from "what does this word mean" to "what does this sentence mean" to "how do you say it in Spanish".

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { requestCards, requestPlan } from './claude';
-import { buildBuiltinPlan, startSession } from './planner';
-import { stats } from './srs';
+import { requestCards, requestContexts, requestPlan, requestStories } from './claude';
+import { buildBuiltinPlan, splitMixedPairs, startSession } from './planner';
+import { allCards, contextsFor, stats } from './srs';
 import { loadState, requestPersistence, saveState } from './storage';
 import type { AppState, Plan } from './types';
 
@@ -50,17 +50,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [commit]
   );
 
+  // Keep the Spanish side stocked while online: new words, more example sentences, mini-stories.
   const topUpSpanish = useCallback(async () => {
     const s = ref.current;
     if (!s || !s.settings.apiKey || !navigator.onLine) return;
-    if (stats(s.spanish).unseen >= 12 || Date.now() - lastCards.current < 6 * 3600_000) return;
+    if (Date.now() - lastCards.current < 3 * 3600_000) return;
     lastCards.current = Date.now();
-    try {
-      const cards = await requestCards(s);
-      if (cards.length) update((cur) => ({ ...cur, spanish: { ...cur.spanish, extraCards: [...cur.spanish.extraCards, ...cards] } }));
-    } catch {
-      /* try again another time */
-    }
+    const st = stats(s.spanish);
+    const jobs: Promise<void>[] = [];
+    if (st.unseen < 12)
+      jobs.push(
+        requestCards(s).then((cards) => {
+          if (cards.length) update((cur) => ({ ...cur, spanish: { ...cur.spanish, extraCards: [...cur.spanish.extraCards, ...cards] } }));
+        })
+      );
+    if (st.storiesWaiting < 3 && st.seen >= 5)
+      jobs.push(
+        requestStories(s).then((stories) => {
+          if (stories.length) update((cur) => ({ ...cur, spanish: { ...cur.spanish, stories: [...cur.spanish.stories, ...stories].slice(-40) } }));
+        })
+      );
+    const thin = allCards(s.spanish)
+      .filter((c) => (s.spanish.progress[c.id]?.box ?? 0) >= 1 && contextsFor(c, s.spanish).length < 3)
+      .slice(0, 15);
+    if (thin.length)
+      jobs.push(
+        requestContexts(s, thin).then((contexts) => update((cur) => ({ ...cur, spanish: { ...cur.spanish, contexts: { ...cur.spanish.contexts, ...contexts } } })))
+      );
+    await Promise.allSettled(jobs);
   }, [update]);
 
   const refreshPlan = useCallback(
@@ -106,10 +123,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void requestPersistence();
     loadState().then((s) => {
-      const ready = !s.plan && !s.active ? { ...s, plan: buildBuiltinPlan(s) } : s;
+      let ready = !s.plan && !s.active ? { ...s, plan: buildBuiltinPlan(s) } : s;
+      // Plans saved before the same-equipment rule: split any pair that needs two stations,
+      // then ask Claude for a fresh plan that follows the rule.
+      const fixed = ready.plan && !ready.active ? splitMixedPairs(ready.plan) : { plan: ready.plan, changed: false };
+      if (fixed.changed) ready = { ...ready, plan: fixed.plan };
       commit(ready);
       lastAuto.current = Date.now();
-      void refreshPlan();
+      void refreshPlan(fixed.changed);
     });
   }, [commit, refreshPlan]);
 

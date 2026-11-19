@@ -6,14 +6,16 @@ import {
   buildBonusPlan,
   buildBuiltinPlan,
   nextDayType,
+  cableSwap,
   nextSet,
   nextTarget,
   roundToAvailable,
   sanitizePlan,
+  sharedStation,
   startSession,
   weekInfo
 } from './planner';
-import { answer, buildQuestion, findHighlight, nextQuestion, pickCard, stats } from './srs';
+import { answer, buildQuestion, cleanStories, contextsFor, findHighlight, nextQuestion, pickCard, stats } from './srs';
 import type { AppState, Session } from './types';
 
 function logSession(s: AppState, edit: (sess: Session) => void, when = new Date()): AppState {
@@ -97,6 +99,18 @@ describe('built-in planner', () => {
     const ids = p.blocks.flatMap((b) => b.items.map((i) => i.exerciseId));
     expect(ids).not.toContain('face_pull');
     expect(ids).not.toContain('cable_pushdown');
+    // a stand-in on different equipment means that block is done one at a time, not alternated
+    for (const b of p.blocks) if (b.items.length > 1) expect(sharedStation(b.items.map((i) => i.exerciseId))).not.toBeNull();
+  });
+
+  it('keeps every pair on one station (dumbbells or cable)', () => {
+    let s = freshState();
+    for (const day of ['A', 'B'] as const) {
+      const p = buildBuiltinPlan(s, day);
+      for (const b of p.blocks) if (b.items.length > 1) expect(sharedStation(b.items.map((i) => i.exerciseId))).not.toBeNull();
+    }
+    s = logSession(s, () => {});
+    expect(buildBuiltinPlan(s).blocks.length).toBe(3);
   });
 });
 
@@ -112,6 +126,10 @@ describe('guardrails on Claude plans', () => {
             { exercise_id: 'made_up', sets: 3, reps: 8, weight: 10 },
             { exercise_id: 'seated_cable_row', sets: 3, reps: 8, weight: 83 }
           ] },
+          { label: 'Pair B', kind: 'pair', rest_seconds: 75, items: [
+            { exercise_id: 'lat_pulldown', sets: 3, reps: 8, weight: 80 },
+            { exercise_id: 'face_pull', sets: 2, reps: 15, weight: 25 }
+          ] },
           { label: 'Legs', kind: 'pair', rest_seconds: 90, items: [{ exercise_id: 'db_rdl', sets: 3, reps: 8, weight: 40 }] }
         ]
       },
@@ -125,6 +143,9 @@ describe('guardrails on Claude plans', () => {
     expect(bench.sets).toBe(5);
     expect(bench.weight).toBe(40); // start 30 + two notches max during calibration
     expect(items.find((i) => i.exerciseId === 'seated_cable_row')!.weight).toBe(85);
+    // dumbbell + cable "pair" gets split into one-at-a-time blocks; cable + cable stays a pair
+    for (const b of plan.blocks) if (b.items.length > 1) expect(sharedStation(b.items.map((i) => i.exerciseId))).not.toBeNull();
+    expect(plan.blocks.some((b) => b.items.length === 2 && b.items[0].exerciseId === 'lat_pulldown')).toBe(true);
   });
 });
 
@@ -137,7 +158,31 @@ describe('workout flow', () => {
       order.push(`${s.exercises[n.ex].exerciseId}#${n.set}`);
       s.exercises[n.ex].sets[n.set].done = true;
     }
-    expect(order).toEqual(['db_bench_press#0', 'seated_cable_row#0', 'db_bench_press#1', 'seated_cable_row#1']);
+    expect(order).toEqual(['db_bench_press#0', 'one_arm_db_row#0', 'db_bench_press#1', 'one_arm_db_row#1']);
+  });
+
+  it('does a two-station block one exercise at a time', () => {
+    const s = startSession(buildBuiltinPlan(freshState()));
+    s.exercises[1].exerciseId = 'seated_cable_row'; // pair 1 is now dumbbell + cable
+    const order: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const n = nextSet(s)!;
+      order.push(`${s.exercises[n.ex].exerciseId}#${n.set}`);
+      s.exercises[n.ex].sets[n.set].done = true;
+    }
+    expect(order).toEqual(['db_bench_press#0', 'db_bench_press#1', 'db_bench_press#2', 'seated_cable_row#0']);
+  });
+
+  it('"cable machine taken" swaps unstarted cable work to dumbbells, and back', () => {
+    const st = freshState();
+    const sess = startSession(buildBuiltinPlan(st));
+    const before = sess.exercises.map((e) => e.exerciseId);
+    const on = cableSwap(sess, st.settings, [], true, true);
+    expect(on.session.cableBusy).toBe(true);
+    expect(on.session.exercises.some((e) => EXERCISE_BY_ID[e.exerciseId].load === 'cable')).toBe(false);
+    expect(new Set(on.session.exercises.map((e) => e.exerciseId)).size).toBe(on.session.exercises.length);
+    const off = cableSwap(on.session, st.settings, [], true, false);
+    expect(off.session.exercises.map((e) => e.exerciseId)).toEqual(before);
   });
 
   it('offers a bonus day after 4 sessions and repeats the weakest one', () => {
@@ -175,9 +220,45 @@ describe('Spanish cards', () => {
     expect(q.highlight?.[1]).toBe('la espalda');
   });
 
-  it('highlights words inside sentences', () => {
+  it('highlights whole words inside sentences', () => {
     expect(findHighlight('¿Cuánto pesa la mancuerna?', 'la mancuerna')?.[1]).toBe('la mancuerna');
     expect(findHighlight('Jala hacia el pecho.', 'jalar')).toBeNull();
+    expect(findHighlight('Quiero ir a la playa.', 'ya')).toBeNull();
+    expect(findHighlight('¿Cuánto cuesta la membresía?', '¿cuánto?')?.[1]).toBe('Cuánto');
+  });
+
+  it('every built-in card has a memory hook except a couple', () => {
+    expect(BASE_DECK.filter((c) => !c.hook).length).toBeLessThanOrEqual(3);
+  });
+
+  it('shows a word in different sentences on later reviews', () => {
+    const sp = freshState().spanish;
+    const card = BASE_DECK.find((c) => c.word === 'la mancuerna')!;
+    const ctx = contextsFor(card, sp);
+    expect(ctx.length).toBeGreaterThan(1);
+    expect(ctx[0].es).toBe(card.es);
+  });
+
+  it('fill-in-the-blank uses the sentence\'s own form and Spanish options', () => {
+    const card = BASE_DECK.find((c) => c.word === 'la espalda')!;
+    const q = buildQuestion(card, 'cloze', BASE_DECK, () => 0.4);
+    expect(q.mode).toBe('cloze');
+    expect(q.options[q.answerIndex]).toBe('la espalda');
+    expect(q.optionsLang).toBe('es');
+    expect(q.support).toBe(card.sentenceEn);
+  });
+
+  it('a right answer after the hint does not move the card up', () => {
+    let sp = freshState().spanish;
+    const id = BASE_DECK[0].id;
+    sp = answer(sp, id, true, 0);
+    sp = answer(sp, id, true, 1, true);
+    expect(sp.progress[id].box).toBe(1);
+  });
+
+  it('only keeps well-formed stories', () => {
+    const ok = { es: 'Mi amigo va al gimnasio. Levanta pesas.', en: 'My friend goes to the gym. He lifts weights.', question: 'What does he lift?', options: ['Weights', 'A dog', 'Water', 'A car'], answer_index: 0, new_words: [] };
+    expect(cleanStories([ok, { ...ok, answer_index: 7 }, { ...ok, options: ['a', 'a', 'b', 'c'] }])).toHaveLength(1);
   });
 
   it('brings missed cards back and only adds new words when doing well', () => {

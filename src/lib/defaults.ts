@@ -37,7 +37,7 @@ export function freshState(): AppState {
     sessions: [],
     posture: [],
     assessment: null,
-    spanish: { progress: {}, extraCards: [], recent: [] },
+    spanish: { progress: {}, extraCards: [], recent: [], contexts: {}, stories: [] },
     claude: { lastError: null, lastSuccess: null }
   };
 }
@@ -61,7 +61,9 @@ export function migrate(raw: unknown): AppState {
     spanish: {
       progress: s.spanish?.progress ?? {},
       extraCards: s.spanish?.extraCards ?? [],
-      recent: s.spanish?.recent ?? []
+      recent: s.spanish?.recent ?? [],
+      contexts: s.spanish?.contexts ?? {},
+      stories: s.spanish?.stories ?? []
     },
     claude: { ...base.claude, ...(s.claude ?? {}) }
   };
