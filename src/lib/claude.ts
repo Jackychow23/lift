@@ -25,23 +25,28 @@ export function explainApiError(status: number, detail: string): string {
 
 interface ToolUseBlock { type: 'tool_use'; name: string; input: unknown }
 
-async function callClaude(settings: Settings, body: Record<string, unknown>, timeoutMs = 90_000): Promise<{ content: ToolUseBlock[] }> {
+/** Models that refused a forced tool_choice this session. */
+const autoOnly = new Set<string>();
+
+async function callClaude(settings: Settings, body: Record<string, unknown>, timeoutMs = 120_000): Promise<{ content: ToolUseBlock[] }> {
   if (!settings.apiKey) throw new Error('No API key yet. Add one in Settings.');
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(API, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': settings.apiKey.trim(),
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({ model: settings.model.trim() || 'claude-sonnet-5-5', ...body }),
-      signal: ctrl.signal
-    });
-    if (!res.ok) {
+  const model = settings.model.trim() || 'claude-sonnet-5-5';
+  const post = async (payload: Record<string, unknown>) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(API, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': settings.apiKey.trim(),
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({ model, ...payload }),
+        signal: ctrl.signal
+      });
+      if (res.ok) return { ok: true as const, json: await res.json() };
       let detail = '';
       try {
         const j = await res.json();
@@ -49,33 +54,67 @@ async function callClaude(settings: Settings, body: Record<string, unknown>, tim
       } catch {
         /* ignore */
       }
-      throw new Error(explainApiError(res.status, detail).replace('{model}', settings.model.trim()));
+      return { ok: false as const, status: res.status, detail };
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') throw new Error('Claude took too long to answer. Will retry later.');
+      if (e instanceof TypeError) throw new Error('No connection to Claude right now. Will retry when online.');
+      throw e;
+    } finally {
+      clearTimeout(timer);
     }
-    return await res.json();
-  } catch (e) {
-    if ((e as Error).name === 'AbortError') throw new Error('Claude took too long to answer. Will retry later.');
-    if (e instanceof TypeError) throw new Error('No connection to Claude right now. Will retry when online.');
-    throw e;
-  } finally {
-    clearTimeout(timer);
+  };
+
+  // Some models (e.g. ones that always think first) only allow tool_choice "auto".
+  // Then ask that way; the prompt and the single tool still steer it to the right answer.
+  const auto = { ...body, tool_choice: { type: 'auto' } };
+  let r = await post(body.tool_choice && autoOnly.has(model) ? auto : body);
+  if (!r.ok && r.status === 400 && /tool_choice/i.test(r.detail) && body.tool_choice) {
+    autoOnly.add(model);
+    r = await post(auto);
   }
+  if (!r.ok) throw new Error(explainApiError(r.status, r.detail).replace('{model}', model));
+  return r.json;
 }
 
+/** The tool call's input — or, if the model wrote JSON as text instead, that JSON. */
 function toolInput<T>(resp: { content: ToolUseBlock[] }, name: string): T {
   const block = resp.content?.find((b) => b.type === 'tool_use' && b.name === name);
-  if (!block) throw new Error('Claude did not return a structured answer.');
-  return block.input as T;
+  if (block) return block.input as T;
+  const text = (resp.content as unknown as { type: string; text?: string }[])
+    .filter((b) => b.type === 'text' && b.text)
+    .map((b) => b.text)
+    .join('\n');
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(text.slice(start, end + 1)) as T;
+    } catch {
+      /* fall through */
+    }
+  }
+  throw new Error('Claude answered, but not in the format the app needs. Will retry later.');
 }
 
+/** Checks the key AND that the model can answer in the app's structured format. */
 export async function testConnection(settings: Settings): Promise<string> {
-  const resp = await callClaude(settings, { max_tokens: 16, messages: [{ role: 'user', content: 'Reply with the single word: ready' }] }, 30_000);
-  const text = (resp.content as unknown as { type: string; text?: string }[]).find((b) => b.type === 'text')?.text ?? '';
-  return text.trim() || 'Connected';
+  const resp = await callClaude(
+    settings,
+    {
+      max_tokens: 2000,
+      tools: [{ name: 'ping', description: 'Confirm the connection.', input_schema: { type: 'object', required: ['ok'], properties: { ok: { type: 'boolean' } } } }],
+      tool_choice: { type: 'tool', name: 'ping' },
+      messages: [{ role: 'user', content: 'Call the ping tool with ok set to true.' }]
+    },
+    60_000
+  );
+  toolInput<{ ok: boolean }>(resp, 'ping');
+  return 'Connected';
 }
 
 // ───────── workout plans ─────────
 
-const COACH_SYSTEM = `You are the strength coach inside a personal, offline-first lifting app. You write the lifter's NEXT workout, which stays on his phone until he does it.
+const COACH_SYSTEM = `You are the strength coach inside a personal, offline-first lifting app. You write the lifter's NEXT workout, which stays on his phone until he does it. Always answer by calling the submit_workout tool; don't reply with plain text.
 
 How the app works:
 - He logs only weight and reps per set. He does not rate difficulty. When a set feels easy he adds reps or an extra set; when it's too hard he lowers the weight. Read his logs with that in mind: reps above target or extra sets mean "too easy", a lower weight than planned means "too heavy".
@@ -216,7 +255,7 @@ ${historyText(s)}
 Write his next workout with submit_workout.${withAssessment ? ' Also include an "assessment": which muscles or lifts look weak relative to the others, and what the plan will prioritise.' : ''}`;
 
   const resp = await callClaude(settings, {
-    max_tokens: 2000,
+    max_tokens: 8000,
     system: COACH_SYSTEM,
     tools: [planTool(settings, withAssessment)],
     tool_choice: { type: 'tool', name: 'submit_workout' },
@@ -233,7 +272,7 @@ Write his next workout with submit_workout.${withAssessment ? ' Also include an 
 
 // ───────── Spanish cards ─────────
 
-const SPANISH_SYSTEM = `You write flashcards for a beginner learning Spanish between sets at the gym. He learns mainly through comprehensible input (Dreaming Spanish), so every card teaches one word or short phrase INSIDE a short, natural sentence. Use Mexican Spanish where it differs. Each sentence must contain the word (or an obvious form of it). Sentences: 3–9 words for level 1–2, up to 12 for level 3+. Give natural English. Topics: gym, body, food, daily life, travel, small talk. No duplicates of words he already has.`;
+const SPANISH_SYSTEM = `You write flashcards for a beginner learning Spanish between sets at the gym. He learns mainly through comprehensible input (Dreaming Spanish), so every card teaches one word or short phrase INSIDE a short, natural sentence. Use Mexican Spanish where it differs. Each sentence must contain the word (or an obvious form of it). Sentences: 3–9 words for level 1–2, up to 12 for level 3+. Give natural English. Topics: gym, body, food, daily life, travel, small talk. No duplicates of words he already has. Always answer by calling the provided tool; don't reply with plain text.`;
 
 export async function requestCards(s: AppState, count = 20): Promise<SpanishCard[]> {
   const st = stats(s.spanish);
@@ -251,7 +290,7 @@ Words he already has (do not repeat as targets): ${known.join(', ')}
 
 Write ${count} new cards with add_cards.`;
   const resp = await callClaude(s.settings, {
-    max_tokens: 3000,
+    max_tokens: 8000,
     system: SPANISH_SYSTEM,
     tools: [
       {
@@ -299,7 +338,7 @@ ${cards.map((c) => `- ${c.word} (${c.en}); current example: ${c.es}`).join('\n')
 
 Answer with add_sentences.`;
   const resp = await callClaude(s.settings, {
-    max_tokens: 3000,
+    max_tokens: 8000,
     system: SPANISH_SYSTEM,
     tools: [
       {
@@ -346,7 +385,7 @@ Write ${count} mini-stories with add_stories. Each:
 - Everyday or gym topics. Vary the topics and the people (a friend, a coworker, a dog, a trainer…). Not about the lifter himself.
 - "en" is a natural English translation of the whole story.`;
   const resp = await callClaude(s.settings, {
-    max_tokens: 3000,
+    max_tokens: 8000,
     system: SPANISH_SYSTEM,
     tools: [
       {
