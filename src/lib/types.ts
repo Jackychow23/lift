@@ -135,6 +135,8 @@ export interface Settings {
   allowFloor: boolean;
   /** Time limit for a workout, including warm-up sets and rests. */
   sessionMinutes: number;
+  /** Timed holds (chin tucks): run every rep automatically, or wait for a tap before each one. */
+  holdMode: 'auto' | 'tap';
   sound: boolean;
   /** Free text the coach reads every time — goals, injuries, likes, dislikes. */
   aboutMe: string;

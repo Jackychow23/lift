@@ -19,7 +19,7 @@ import {
   station,
   weekInfo
 } from './planner';
-import { answer, buildQuestion, cleanStories, contextsFor, findHighlight, nextQuestion, pickCard, stats } from './srs';
+import { answer, buildQuestion, maskAnswer, cleanStories, contextsFor, findHighlight, nextQuestion, pickCard, stats } from './srs';
 import type { AppState, Session } from './types';
 
 function logSession(s: AppState, edit: (sess: Session) => void, when = new Date()): AppState {
@@ -354,6 +354,17 @@ describe('Spanish cards', () => {
     }
     const cuarto = BASE_DECK.find((c) => c.word === 'el cuarto')!;
     for (let k = 0; k < 30; k++) expect(buildQuestion(cuarto, 'reverse', BASE_DECK).options).not.toContain('la habitación');
+  });
+
+  it("fill-in-the-blank's English hint never shows the Spanish answer", () => {
+    const col = BASE_DECK.find((c) => c.word === 'el colectivo')!;
+    expect(maskAnswer('The colectivo costs forty pesos.', col)).toBe('The shared van costs forty pesos.');
+    const cen = BASE_DECK.find((c) => c.word === 'el cenote')!;
+    expect(maskAnswer('How much is entry to the cenote?', cen)).not.toMatch(/cenote/i);
+    const taxi = BASE_DECK.find((c) => c.word === 'el taxi')!;
+    expect(maskAnswer('Where can I get a taxi?', taxi)).toBe('Where can I get a taxi?'); // same word in English
+    const q = buildQuestion(col, 'cloze', BASE_DECK, Math.random, { es: 'El colectivo cuesta cuarenta pesos.', en: 'The colectivo costs forty pesos.' });
+    expect(q.support).not.toMatch(/colectivo/i);
   });
 
   it('a right answer after the hint does not move the card up', () => {

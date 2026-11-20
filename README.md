@@ -46,6 +46,7 @@ The key stays on the phone. It's never put in backups and never sent anywhere ex
 - **Equipment order:** all the dumbbell/bench work comes first, then everything at the cable machine, so you never walk back to the benches. Claude's plans are put in that order too.
 - **Swapping:** the swap list always shows cable options first, then dumbbell ones. Floor work (push-ups, floor press) is left out unless you switch it on in Settings.
 - **Cable machine taken:** one button in the workout swaps every cable exercise you haven't started for a dumbbell one. Tap it again to swap back.
+- **Timed holds (chin tucks):** tap the check (or “Start set … with the hold timer”). In Automatic mode you tap Start once: one buzz = hold, two buzzes = relax, and it counts the reps and logs the set. “Tap each rep” starts each hold when you tap instead.
 - **Rest screen:** besides the Spanish card, it has buttons for the form notes of the exercise you just did and the next one.
 - **Bonus day:** after 4 workouts in a week (Mon–Sun), an optional bonus repeats that week's weakest workout with the same targets.
 - **Progression:**

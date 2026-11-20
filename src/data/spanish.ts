@@ -131,7 +131,7 @@ const ROWS: Row[] = [
   // ── Places and the beach ──
   ['la playa', 'the beach', 'Vamos a la playa mañana.', "We're going to the beach tomorrow.", 1, 'places', 'Picture the beach as the place to play.'],
   ['el mar', 'the sea', 'El mar está muy bonito hoy.', 'The sea looks beautiful today.', 1, 'places', 'Think “marine” and “mariner”.'],
-  ['el cenote', 'the cenote', '¿Cuánto cuesta la entrada al cenote?', 'How much is entry to the cenote?', 1, 'places', 'A Maya word for a natural swimming hole.'],
+  ['el cenote', 'the natural swimming hole', '¿Cuánto cuesta la entrada al cenote?', 'How much is entry to the cenote?', 1, 'places', 'A Maya word for a natural swimming hole.'],
   ['las ruinas', 'the ruins', 'Las ruinas abren a las ocho.', 'The ruins open at eight.', 1, 'places', 'Looks like “ruins”.'],
   ['la entrada', 'the entrance, the ticket', 'La entrada es por aquí.', 'The entrance is this way.', 1, 'places', 'Think “enter”.'],
   ['abierto', 'open', '¿Está abierto hoy?', 'Is it open today?', 1, 'places', 'Think “aperture”, an opening.'],

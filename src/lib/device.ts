@@ -40,6 +40,30 @@ export function primeAudio() {
   }
 }
 
+/** Short cue for timed holds: 'start' = one tap, 'end' = two taps. */
+export function cue(kind: 'start' | 'end', sound: boolean) {
+  try {
+    navigator.vibrate?.(kind === 'start' ? 120 : [180, 90, 180]);
+  } catch {
+    /* no vibration */
+  }
+  if (!sound || !ctx) return;
+  try {
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.value = kind === 'start' ? 660 : 990;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+    o.connect(g).connect(ctx.destination);
+    o.start(t);
+    o.stop(t + 0.17);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function restDone(sound: boolean) {
   try {
     navigator.vibrate?.([250, 120, 250]);

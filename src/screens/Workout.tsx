@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Nav } from '../App';
 import { IconBack, IconCheck, IconPlay, IconPlus, IconSwap } from '../components/Icons';
 import NumInput from '../components/NumInput';
+import HoldTimer from '../components/HoldTimer';
 import RestOverlay from '../components/RestOverlay';
 import Sheet from '../components/Sheet';
 import { EXERCISE_BY_ID } from '../data/exercises';
@@ -20,6 +21,8 @@ export default function Workout({ nav }: { nav: Nav }) {
   const [swapFor, setSwapFor] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<'finish' | 'discard' | null>(null);
   const [cableMsg, setCableMsg] = useState<string | null>(null);
+  /** Set being done with the hold timer (chin tucks and other timed holds). */
+  const [holdFor, setHoldFor] = useState<{ ei: number; si: number } | null>(null);
 
   useEffect(() => {
     void keepScreenOn(true);
@@ -241,7 +244,12 @@ export default function Workout({ nav }: { nav: Nav }) {
                                 <NumInput decimal label={`${ex?.name} set ${si + 1} weight in pounds`} value={set.weight} onChange={(n) => edit((s) => { s.exercises[ei].sets[si].weight = n; })} />
                               )}
                               <NumInput label={`${ex?.name} set ${si + 1} reps`} value={set.reps} onChange={(n) => edit((s) => { s.exercises[ei].sets[si].reps = n; })} />
-                              <button type="button" className={`check${isNext ? ' next' : ''}`} aria-label={`Log ${ex?.name} set ${si + 1}`} onClick={() => logSet(ei, si)}>
+                              <button
+                                type="button"
+                                className={`check${isNext ? ' next' : ''}`}
+                                aria-label={log.holdSeconds ? `Start ${ex?.name} set ${si + 1} with the hold timer` : `Log ${ex?.name} set ${si + 1}`}
+                                onClick={() => (log.holdSeconds ? setHoldFor({ ei, si }) : logSet(ei, si))}
+                              >
                                 <IconCheck />
                               </button>
                             </>
@@ -249,6 +257,14 @@ export default function Workout({ nav }: { nav: Nav }) {
                         </div>
                       );
                     })}
+                    {log.holdSeconds && log.sets.some((x) => !x.done) && (() => {
+                      const si = log.sets.findIndex((x) => !x.done);
+                      return (
+                        <button type="button" className="btn outline-accent" onClick={() => setHoldFor({ ei, si })}>
+                          Start set {si + 1} with the hold timer
+                        </button>
+                      );
+                    })()}
                     <button type="button" className="btn ghost" style={{ alignSelf: 'flex-start' }} onClick={() => addSet(ei)}>
                       <IconPlus /> Add set
                     </button>
@@ -276,6 +292,31 @@ export default function Workout({ nav }: { nav: Nav }) {
           onClose={() => edit((s) => { s.rest = null; })}
         />
       )}
+
+      {holdFor && session.exercises[holdFor.ei] && (() => {
+        const log = session.exercises[holdFor.ei];
+        const set = log.sets[holdFor.si];
+        return (
+          <HoldTimer
+            key={`${holdFor.ei}-${holdFor.si}`}
+            name={EXERCISE_BY_ID[log.exerciseId]?.name ?? log.exerciseId}
+            setLabel={`Set ${holdFor.si + 1} of ${log.sets.length}`}
+            targetReps={set?.reps || 10}
+            holdSeconds={log.holdSeconds ?? 5}
+            mode={state.settings.holdMode}
+            sound={state.settings.sound}
+            onModeChange={(m) => update((st) => ({ ...st, settings: { ...st.settings, holdMode: m } }))}
+            onCancel={() => setHoldFor(null)}
+            onFinish={(reps) => {
+              const { ei, si } = holdFor;
+              setHoldFor(null);
+              if (reps <= 0) return;
+              edit((s) => { s.exercises[ei].sets[si].reps = reps; });
+              logSet(ei, si);
+            }}
+          />
+        );
+      })()}
 
       {swapFor !== null && (
         <Sheet title="Swap exercise" onClose={() => setSwapFor(null)}>

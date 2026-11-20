@@ -141,6 +141,19 @@ function distractors(card: SpanishCard, pool: SpanishCard[], get: (c: SpanishCar
   return out;
 }
 
+/**
+ * The English hint under a fill-in-the-blank must not contain the Spanish answer
+ * (loanwords like "colectivo" or "cenote" often stay Spanish in English). Swap it for the meaning.
+ */
+export function maskAnswer(en: string, card: SpanishCard): string {
+  const bare = stripArticle(card.word);
+  if (!bare) return en;
+  const meaning = card.en.replace(/^(the|a|an|to)\s+/i, '');
+  if (meaning.toLowerCase() === bare.toLowerCase()) return en; // same word in both languages (taxi, tortilla)
+  const esc = bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return en.replace(new RegExp(`(^|[^\\p{L}])(${esc})s?(?=[^\\p{L}]|$)`, 'giu'), (_m, pre) => `${pre}${meaning}`);
+}
+
 export function buildQuestion(
   card: SpanishCard,
   mode: Mode,
@@ -163,7 +176,7 @@ export function buildQuestion(
     correct = hl[1];
     others = distractors(card, pool, form, 3, rand, correct).map(matchCase);
     q = {
-      card, mode, prompt: context.es, promptLang: 'es', highlight: hl, support: context.en,
+      card, mode, prompt: context.es, promptLang: 'es', highlight: hl, support: maskAnswer(context.en, card),
       question: 'Which word fills the blank?', optionsLang: 'es', context,
       explain: `${card.word} = ${card.en}.${hook}`
     };
