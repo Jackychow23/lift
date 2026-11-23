@@ -145,4 +145,21 @@ textarea.input { min-height: 160px; line-height: 1.45; resize: vertical; }
 .bar { height: 10px; border-radius: 5px; background: var(--raised); overflow: hidden; }
 .bar > div { height: 100%; border-radius: 5px; }
 
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.wk-day { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; border-radius: 10px; background: var(--card); border: 1px solid transparent; }
+.wk-letter { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.04em; }
+.wk-mark { font-family: var(--display); font-size: 14px; font-weight: 700; min-height: 18px; display: inline-flex; align-items: center; }
+.wk-day.wk-done { background: var(--good-soft); }
+.wk-day.wk-done .wk-mark { color: var(--good-ink); }
+.wk-day.wk-next { border-color: var(--accent); background: var(--accent-soft); }
+.wk-day.wk-next .wk-mark { color: var(--accent-soft-ink); }
+.wk-day.wk-planned .wk-mark { color: var(--text-2); }
+.wk-day.wk-rest, .wk-day.wk-missed { background: transparent; }
+.wk-day.wk-rest .wk-mark, .wk-day.wk-missed .wk-mark { color: var(--line-2); }
+.wk-day.wk-today .wk-letter { color: var(--text); }
+.wk-day.wk-today { box-shadow: inset 0 -2px 0 var(--text-2); }
+.day-chips { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.day-chips button { min-height: 44px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bg); font-weight: 600; color: var(--muted); }
+.day-chips button[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-soft-ink); }
+
 .banner { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--card-2); border: 1px solid var(--line); font-size: 14px; line-height: 1.45; color: var(--text-2); }

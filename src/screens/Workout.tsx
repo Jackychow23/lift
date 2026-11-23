@@ -93,7 +93,7 @@ export default function Workout({ nav }: { nav: Nav }) {
 
   const swap = (ei: number, newId: string) => {
     const ex = EXERCISE_BY_ID[newId];
-    const t = nextTarget(ex, history, state.settings, isCalibrating(state));
+    const t = nextTarget(ex, history, state.settings, isCalibrating(state), session.intensity === 'light');
     edit((s) => {
       const log = s.exercises[ei];
       log.exerciseId = newId;

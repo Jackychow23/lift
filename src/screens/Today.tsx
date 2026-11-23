@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
 import type { Nav } from '../App';
 import PlanList from '../components/PlanList';
+import WeekStrip from '../components/WeekStrip';
 import { CALIBRATION_SESSIONS } from '../lib/defaults';
 import { primeAudio } from '../lib/device';
 import { useOnline } from '../lib/hooks';
-import { buildBonusPlan, buildBuiltinPlan, estimateMinutes, isCalibrating, regularCount, setCounts, weekInfo } from '../lib/planner';
+import { buildBonusPlan, buildBuiltinPlan, catchUpTarget, estimateMinutes, isCalibrating, regularCount, setCounts, weekInfo, weekSlots } from '../lib/planner';
 import { useStore } from '../lib/store';
-import { daysBetween } from '../lib/util';
+import { DAY_NAMES, daysBetween, isoDate, weekdayIndex } from '../lib/util';
 
 export default function Today({ nav }: { nav: Nav }) {
   const { state, update, coachBusy, startWorkout } = useStore();
@@ -17,6 +18,10 @@ export default function Today({ nav }: { nav: Nav }) {
   const lastCheck = state.posture[state.posture.length - 1];
   const checkDue = !lastCheck || daysBetween(new Date(lastCheck.date), new Date()) >= 30;
   const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+  const isTrainingDay = weekSlots(state.settings.trainingDays).some((x) => x.weekday === weekdayIndex(new Date()));
+  const plannedToday = plan?.plannedDate === isoDate(new Date());
+  const catchUp = !state.active && !wk.bonusAvailable ? catchUpTarget(state) : null;
+  const plannedDay = plan?.plannedDate ? DAY_NAMES[weekdayIndex(new Date(`${plan.plannedDate}T12:00`))] : null;
 
   // After a reset or restore there may be no plan yet: make the built-in one.
   useEffect(() => {
@@ -28,6 +33,13 @@ export default function Today({ nav }: { nav: Nav }) {
     const p = plan ?? buildBuiltinPlan(state);
     if (!plan) update((s) => ({ ...s, plan: p }));
     startWorkout(p);
+    nav.go({ name: 'workout' });
+  };
+
+  const startCatchUp = () => {
+    if (!catchUp) return;
+    primeAudio();
+    startWorkout(buildBuiltinPlan(state, catchUp));
     nav.go({ name: 'workout' });
   };
 
@@ -49,6 +61,8 @@ export default function Today({ nav }: { nav: Nav }) {
         </span>
       </div>
 
+      <WeekStrip state={state} />
+
       {state.active ? (
         <div className="card outline stack">
           <p className="label">Workout in progress</p>
@@ -63,8 +77,16 @@ export default function Today({ nav }: { nav: Nav }) {
       ) : plan ? (
         <>
           <div className="stack" style={{ gap: 6 }}>
+            {!plannedToday && plannedDay && (
+              <p className="label" style={{ color: 'var(--accent-soft-ink)' }}>
+                {isTrainingDay ? 'Next workout' : 'Rest day today · next workout'}: {plannedDay}
+              </p>
+            )}
             <h1 className="h1">{plan.title}</h1>
-            <p className="sub">{plan.focus ? `${plan.focus} · ` : ''}about {estimateMinutes(plan.blocks)} min</p>
+            <p className="sub">
+              {plan.intensity ? `${plan.intensity === 'light' ? 'Light' : 'Heavy'} day · ` : ''}
+              {plan.focus ? `${plan.focus} · ` : ''}about {estimateMinutes(plan.blocks)} min
+            </p>
           </div>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {isCalibrating(state) && <span className="chip">Calibration · {n + 1} of {CALIBRATION_SESSIONS}</span>}
@@ -89,11 +111,27 @@ export default function Today({ nav }: { nav: Nav }) {
         </>
       ) : null}
 
+      {catchUp && (
+        <div className="card outline stack">
+          <p className="label">Catch-up · optional</p>
+          <p className="body">
+            {wk.planned - wk.regularCount === 1 ? 'One workout' : `${wk.planned - wk.regularCount} workouts`} left from this week. Do{' '}
+            <strong>
+              Upper {catchUp.dayType} · {catchUp.intensity}
+            </strong>{' '}
+            now, or rest; Monday starts fresh either way.
+          </p>
+          <button type="button" className="btn outline-accent" onClick={startCatchUp}>
+            Start catch-up workout
+          </button>
+        </div>
+      )}
+
       {!state.active && wk.bonusAvailable && wk.weakest && (
         <div className="card outline stack">
           <p className="label">Bonus day · optional</p>
           <p className="body">
-            You've done {wk.regularCount} this week. Want another go at your weakest day, <strong>{wk.weakest.title}</strong>?
+            All {wk.planned} workouts done this week. Want another go at your weakest day, <strong>{wk.weakest.title}</strong>?
           </p>
           <button type="button" className="btn outline-accent" onClick={startBonus}>
             Start bonus workout

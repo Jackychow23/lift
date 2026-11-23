@@ -20,7 +20,7 @@ const EQUIPMENT: [EquipmentKey, string][] = [
 ];
 
 export default function SettingsScreen() {
-  const { state, update, coachBusy, refreshPlan } = useStore();
+  const { state, update, coachBusy, refreshPlan, ensureSchedule } = useStore();
   const online = useOnline();
   const s = state.settings;
   const [showKey, setShowKey] = useState(false);
@@ -118,6 +118,35 @@ export default function SettingsScreen() {
           <textarea className="input" value={s.aboutMe} onChange={(e) => set({ aboutMe: e.target.value })} />
         </label>
         <button type="button" className="btn ghost" style={{ alignSelf: 'flex-start' }} onClick={() => set({ aboutMe: DEFAULT_ABOUT_ME })}>Reset to original</button>
+      </section>
+
+      <section className="card stack" aria-label="Training days">
+        <span style={{ fontSize: 15, fontWeight: 600 }}>Training days</span>
+        <div className="day-chips" role="group" aria-label="Training days">
+          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((l, d) => {
+            const on = s.trainingDays.includes(d);
+            const names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            return (
+              <button
+                key={d}
+                type="button"
+                aria-pressed={on}
+                aria-label={names[d]}
+                onClick={() => {
+                  const next = on ? s.trainingDays.filter((x) => x !== d) : [...s.trainingDays, d].sort((a, b) => a - b);
+                  if (!next.length) return;
+                  set({ trainingDays: next });
+                  if (ensureSchedule()) void refreshPlan(true);
+                }}
+              >
+                {l}
+              </button>
+            );
+          })}
+        </div>
+        <p className="small" style={{ margin: 0, lineHeight: 1.5 }}>
+          Upper A and B alternate. A third day in a row is a light day (lighter weights, a few more reps). Miss a day and the next one picks up where you left off; one still left after the last training day shows up as an optional catch-up. Each week starts fresh on Monday, and the bonus day unlocks once the week's workouts are done.
+        </p>
       </section>
 
       <section className="card stack" aria-label="Workout length">

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { requestCards, requestContexts, requestPlan, requestStories } from './claude';
-import { buildBuiltinPlan, estimateSeconds, fitToTime, startSession, toStraightSets } from './planner';
+import { buildBuiltinPlan, estimateSeconds, fitToTime, planMatches, scheduleTarget, startSession, toStraightSets } from './planner';
 import { allCards, contextsFor, stats } from './srs';
 import { loadState, requestPersistence, saveState } from './storage';
 import type { AppState, Plan } from './types';
@@ -15,6 +15,8 @@ interface Store {
   /** Saves the active workout. Returns its id, or null if nothing was logged (then it's discarded). */
   finishWorkout: () => string | null;
   discardWorkout: () => void;
+  /** Re-target the plan to the schedule (after changing training days). */
+  ensureSchedule: () => boolean;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -97,7 +99,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       busyRef.current = true;
       setCoachBusy(true);
       try {
-        const { plan, assessment } = await requestPlan(s, { dayType: s.plan?.dayType });
+        const { plan, assessment } = await requestPlan(s, { target: scheduleTarget(s) });
         update((cur) => {
           // Don't swap the plan out from under a workout that started meanwhile.
           if (cur.active || (cur.plan?.id ?? null) !== planIdAtStart) return { ...cur, claude: { lastError: null, lastSuccess: new Date().toISOString() } };
@@ -119,6 +121,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [update, topUpSpanish]
   );
 
+  /** If the saved plan is for a different day of the schedule (new week, missed days, changed training days), replace it. */
+  const ensureSchedule = useCallback((): boolean => {
+    const s = ref.current;
+    if (!s || s.active) return false;
+    const target = scheduleTarget(s);
+    if (planMatches(s.plan, target)) {
+      // Same workout, just a day later (a missed day): keep his plan, move the date.
+      if (s.plan && s.plan.plannedDate !== target.date) commit({ ...s, plan: { ...s.plan, plannedDate: target.date } });
+      return false;
+    }
+    commit({ ...s, plan: buildBuiltinPlan(s, target) });
+    return true;
+  }, [commit]);
+
   // Load saved data once.
   useEffect(() => {
     void requestPersistence();
@@ -132,18 +148,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (ready.plan && !ready.active && estimateSeconds(ready.plan.blocks) > ready.settings.sessionMinutes * 60)
         ready = { ...ready, plan: { ...ready.plan, blocks: fitToTime(ready.plan.blocks, ready.settings.sessionMinutes * 60) } };
       commit(ready);
+      const moved = ensureSchedule();
       lastAuto.current = Date.now();
-      void refreshPlan(fixed.changed);
+      void refreshPlan(fixed.changed || moved);
     });
-  }, [commit, refreshPlan]);
+  }, [commit, refreshPlan, ensureSchedule]);
 
   // Save right away when the app is hidden; check for a better plan when it comes back or goes online.
   useEffect(() => {
     const onVis = () => {
       if (document.visibilityState === 'hidden' && ref.current) void saveState(ref.current);
-      if (document.visibilityState === 'visible' && Date.now() - lastAuto.current > AUTO_EVERY_MS) {
-        lastAuto.current = Date.now();
-        void refreshPlan();
+      if (document.visibilityState === 'visible') {
+        // A new day can mean a new week or a missed day: re-target right away, offline too.
+        const moved = ensureSchedule();
+        if (moved || Date.now() - lastAuto.current > AUTO_EVERY_MS) {
+          lastAuto.current = Date.now();
+          void refreshPlan(moved);
+        }
       }
     };
     const onOnline = () => {
@@ -159,7 +180,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('pagehide', onHide);
     };
-  }, [refreshPlan]);
+  }, [refreshPlan, ensureSchedule]);
 
   const startWorkout = useCallback((plan: Plan) => update((s) => (s.active ? s : { ...s, active: startSession(plan) })), [update]);
 
@@ -175,8 +196,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     const done = { ...a, finishedAt: new Date().toISOString() };
     let next: AppState = { ...s, active: null, sessions: [...s.sessions, done] };
-    // The regular plan sticks until it's done; a bonus workout leaves it in place.
-    if (!a.bonus) next = { ...next, plan: buildBuiltinPlan(next) };
+    // The plan sticks until it's done. A bonus or catch-up workout leaves the next plan in place
+    // unless it no longer fits the schedule.
+    const target = scheduleTarget(next);
+    if (!next.plan || next.plan.id === a.planId || !planMatches(next.plan, target)) next = { ...next, plan: buildBuiltinPlan(next, target) };
     commit(next);
     void saveState(next);
     window.setTimeout(() => void refreshPlan(), 50);
@@ -184,8 +207,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [commit, refreshPlan]);
 
   const value = useMemo(
-    () => (state ? { state, update, coachBusy, refreshPlan, startWorkout, finishWorkout, discardWorkout } : null),
-    [state, update, coachBusy, refreshPlan, startWorkout, finishWorkout, discardWorkout]
+    () => (state ? { state, update, coachBusy, refreshPlan, startWorkout, finishWorkout, discardWorkout, ensureSchedule } : null),
+    [state, update, coachBusy, refreshPlan, startWorkout, finishWorkout, discardWorkout, ensureSchedule]
   );
 
   if (!value) return <div className="boot" aria-busy="true" />;

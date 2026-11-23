@@ -40,7 +40,15 @@ The key stays on the phone. It's never put in backups and never sent anywhere ex
 ## How the training works
 
 - **Calibration (first 8 workouts):** weights start light and climb faster while the app finds your working weights. After that, Claude writes a short weak-points note on the Progress screen and refreshes it monthly.
-- **Days:** Upper A (bench + row) and Upper B (overhead press + pulldown) alternate, 4–5 days a week.
+- **Weekly schedule:** the plan follows the week. By default:
+  - Monday: Upper A (bench + row), heavy
+  - Tuesday: Upper B (overhead press + pulldown), heavy
+  - Wednesday: Upper A, light (third day in a row: about 10–15% lighter, a few more reps)
+  - Thursday: Upper B, light
+  - Friday: optional; the weekend is rest
+
+  Pick other days in **Settings → Training days**. Heavy/light follows the days you actually train in a row, so a rest day makes the next one heavy again. Progression only counts heavy days.
+- **Missed a day:** the next training day picks up where you left off (miss Wednesday and Thursday gets Wednesday's workout). If one is still left when the week's days run out, Friday–Sunday offers it as an optional catch-up. Every Monday starts a fresh week. The strip on the Today screen shows the week: ✓ done, the next workout highlighted, then what's planned (L = light).
 - **Time limit:** every plan is built to fit **Settings → Workout length** (30 min by default), counting set-up, your warm-up sets, each set and the rests; accessories are cut first if it won't fit. During a workout the top bar shows time left, and a note appears if you're running long.
 - **One exercise at a time:** finish all sets of an exercise, then move on. The rests are longer (about 2½ min for main lifts, 75 s for accessories, 30–45 s for posture work), which is time for the Spanish cards.
 - **Equipment order:** all the dumbbell/bench work comes first, then everything at the cable machine, so you never walk back to the benches. Claude's plans are put in that order too.
@@ -48,7 +56,7 @@ The key stays on the phone. It's never put in backups and never sent anywhere ex
 - **Cable machine taken:** one button in the workout swaps every cable exercise you haven't started for a dumbbell one. Tap it again to swap back.
 - **Timed holds (chin tucks):** tap the check (or “Start set … with the hold timer”). In Automatic mode you tap Start once: one buzz = hold, two buzzes = relax, and it counts the reps and logs the set. “Tap each rep” starts each hold when you tap instead.
 - **Rest screen:** besides the Spanish card, it has buttons for the form notes of the exercise you just did and the next one.
-- **Bonus day:** after 4 workouts in a week (Mon–Sun), an optional bonus repeats that week's weakest workout with the same targets.
+- **Bonus day:** once the week's workouts are done, an optional bonus repeats that week's weakest workout with the same targets.
 - **Progression:**
   - Beat the top of the rep range → the weight goes up.
   - Hit the target → same weight, one more rep next time.
@@ -77,10 +85,11 @@ The key stays on the phone. It's never put in backups and never sent anywhere ex
 | To change | Edit |
 |---|---|
 | Goals, likes/dislikes, injuries (what Claude reads) | In the app: **Settings → About me** |
+| Training days | In the app: **Settings → Training days** |
 | Dumbbells, cable steps, attachments, legs on/off | In the app: **Settings → Gym equipment** |
 | Exercises, how-to notes, "feel it here / not here" | `src/data/exercises.ts` (photos go in `public/exercises/<id>/0.webp` and `1.webp`) |
 | Spanish starter deck | `src/data/spanish.ts` |
-| Built-in A/B workouts, progression rules, safety rails | `src/lib/planner.ts` |
+| Built-in A/B workouts, weekly schedule, light-day rules, progression, safety rails | `src/lib/planner.ts` |
 | What Claude is told when planning | `src/lib/claude.ts` (`COACH_SYSTEM`) |
 | Calibration length, default model | `src/lib/defaults.ts` |
 | Colors and layout | `src/styles.css` |

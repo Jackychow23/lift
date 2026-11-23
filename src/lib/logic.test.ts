@@ -6,7 +6,10 @@ import {
   alternatives,
   buildBonusPlan,
   buildBuiltinPlan,
-  nextDayType,
+  catchUpTarget,
+  planMatches,
+  scheduleTarget,
+  weekSlots,
   estimateSeconds,
   remainingSeconds,
   cableSwap,
@@ -21,6 +24,19 @@ import {
 } from './planner';
 import { answer, buildQuestion, maskAnswer, cleanStories, contextsFor, findHighlight, nextQuestion, pickCard, stats } from './srs';
 import type { AppState, Session } from './types';
+
+// Week of Monday 16 Nov 2026, local time.
+const at = (day: number, hour = 9) => new Date(2026, 10, 16 + day, hour, 0, 0);
+
+/** Do the scheduled workout at a fixed time, the way the app would. */
+function train(s: AppState, when: Date, edit: (sess: Session) => void = () => {}): AppState {
+  const plan = buildBuiltinPlan(s, scheduleTarget(s, when));
+  const sess = startSession(plan);
+  sess.exercises.forEach((e) => e.sets.forEach((x) => (x.done = true)));
+  edit(sess);
+  sess.finishedAt = when.toISOString();
+  return { ...s, plan: null, sessions: [...s.sessions, sess] };
+}
 
 function logSession(s: AppState, edit: (sess: Session) => void, when = new Date()): AppState {
   const plan = s.plan ?? buildBuiltinPlan(s);
@@ -58,13 +74,6 @@ describe('built-in planner', () => {
     expect(p.blocks.flatMap((b) => b.items).some((i) => i.exerciseId === 'chin_tuck')).toBe(true);
   });
 
-  it('alternates A and B', () => {
-    let s = freshState();
-    s = logSession(s, () => {});
-    expect(nextDayType(s)).toBe('B');
-    s = logSession(s, () => {});
-    expect(nextDayType(s)).toBe('A');
-  });
 
   it('raises weight when every set beat the top of the range, holds otherwise, follows a weight he dropped', () => {
     const s = freshState();
@@ -282,6 +291,105 @@ describe('workout flow', () => {
     expect(wk.weakest?.id).toBe(s.sessions[2].id);
     const bonus = buildBonusPlan(s)!;
     expect(bonus.bonus).toBe(true);
+  });
+});
+
+describe('weekly schedule', () => {
+  it('Mon–Thu: A heavy, B heavy, A light, B light; spread-out days are all heavy', () => {
+    const show = (days: number[]) => weekSlots(days).map((x) => `${x.dayType}${x.intensity === 'light' ? 'L' : 'H'}`);
+    expect(show([0, 1, 2, 3])).toEqual(['AH', 'BH', 'AL', 'BL']);
+    expect(show([0, 1, 3, 4])).toEqual(['AH', 'BH', 'AH', 'BH']);
+    expect(show([3, 0, 0, 2])).toEqual(['AH', 'BH', 'AH']);
+  });
+
+  it('follows the week, picks up where he left off, and restarts on Monday', () => {
+    let s = freshState();
+    let t = scheduleTarget(s, at(0, 7));
+    expect([t.dayType, t.intensity, t.date]).toEqual(['A', 'heavy', '2026-11-16']);
+    // Starting the app late in a week offers no catch-up for a week he never began.
+    expect(catchUpTarget(s, at(5))).toBeNull();
+    expect(scheduleTarget(s, at(5)).date).toBe('2026-11-23');
+    s = train(s, at(0));
+    t = scheduleTarget(s, at(0, 20));
+    expect([t.dayType, t.intensity, t.date]).toEqual(['B', 'heavy', '2026-11-17']);
+    s = train(s, at(1));
+    t = scheduleTarget(s, at(1, 20));
+    expect([t.dayType, t.intensity, t.date]).toEqual(['A', 'light', '2026-11-18']);
+    // Skips Wednesday: Thursday gets Wednesday's workout, heavy again after the rest day.
+    t = scheduleTarget(s, at(3, 7));
+    expect([t.slot, t.dayType, t.intensity, t.date]).toEqual([2, 'A', 'heavy', '2026-11-19']);
+    s = train(s, at(3));
+    // No training days left this week: next up is Monday's A.
+    t = scheduleTarget(s, at(3, 20));
+    expect([t.weekOf, t.slot, t.dayType, t.date]).toEqual(['2026-11-23', 0, 'A', '2026-11-23']);
+    // Not the same evening, but Friday offers the missed one as an optional catch-up.
+    expect(catchUpTarget(s, at(3, 20))).toBeNull();
+    const c = catchUpTarget(s, at(4))!;
+    expect([c.slot, c.dayType, c.intensity, c.date]).toEqual([3, 'B', 'heavy', '2026-11-20']);
+    s = train(s, at(4));
+    expect(catchUpTarget(s, at(5))).toBeNull();
+    expect(weekInfo(s, at(5)).bonusAvailable).toBe(true);
+    // A new week.
+    t = scheduleTarget(s, at(7, 7));
+    expect([t.weekOf, t.slot, t.dayType, t.intensity]).toEqual(['2026-11-23', 0, 'A', 'heavy']);
+  });
+
+  it('a full Mon–Thu week ends on B light, then unlocks the bonus', () => {
+    let s = freshState();
+    for (let d = 0; d < 3; d++) s = train(s, at(d));
+    const t = scheduleTarget(s, at(2, 20));
+    expect([t.dayType, t.intensity, t.dayName]).toEqual(['B', 'light', 'Thursday']);
+    s = train(s, at(3));
+    expect(s.sessions.map((x) => `${x.dayType}${x.intensity === 'light' ? 'L' : 'H'}`)).toEqual(['AH', 'BH', 'AL', 'BL']);
+    expect(weekInfo(s, at(4)).bonusAvailable).toBe(true);
+    expect(catchUpTarget(s, at(4))).toBeNull();
+  });
+
+  it('a plan only sticks while it is still the right workout', () => {
+    const s = freshState();
+    const t = scheduleTarget(s, at(0, 7));
+    const plan = buildBuiltinPlan(s, t);
+    expect([plan.weekOf, plan.slot, plan.intensity, plan.plannedDate]).toEqual(['2026-11-16', 0, 'heavy', '2026-11-16']);
+    expect(planMatches(plan, t)).toBe(true);
+    expect(planMatches(plan, scheduleTarget(s, at(7, 7)))).toBe(false);
+    expect(planMatches({ ...plan, dayType: 'B' }, t)).toBe(false);
+  });
+
+  it('light days go lighter with more reps and never drag the heavy progression down', () => {
+    let s = freshState();
+    const benchOf = (p: ReturnType<typeof buildBuiltinPlan>) => p.blocks.flatMap((b) => b.items).find((i) => i.exerciseId === 'db_bench_press')!;
+    s = train(s, at(0), (sess) => {
+      const e = sess.exercises.find((x) => x.exerciseId === 'db_bench_press')!;
+      e.sets.forEach((x) => ((x.weight = 40), (x.reps = 8), (x.target = { weight: 40, reps: 8 })));
+    });
+    s = train(s, at(1));
+    const light = scheduleTarget(s, at(2, 7));
+    expect(light.intensity).toBe('light');
+    const lp = buildBuiltinPlan(s, light);
+    expect(benchOf(lp).weight).toBeLessThan(40);
+    expect(benchOf(lp).reps).toBeGreaterThan(8);
+    expect(lp.note).toMatch(/Light day/);
+    // Log the light day; next week's heavy A is based on Monday's 40s, not the light weights.
+    s = train(s, at(2));
+    s = train(s, at(3));
+    const heavy = buildBuiltinPlan(s, scheduleTarget(s, at(7, 7)));
+    expect(heavy.intensity).toBe('heavy');
+    expect(benchOf(heavy).weight).toBeGreaterThanOrEqual(40);
+  });
+
+  it("Claude can't push a light day above the last heavy weight", () => {
+    let s = freshState();
+    s = train(s, at(0), (sess) => {
+      const e = sess.exercises.find((x) => x.exerciseId === 'db_bench_press')!;
+      e.sets.forEach((x) => ((x.weight = 30), (x.reps = 8)));
+    });
+    s = train(s, at(1));
+    const light = scheduleTarget(s, at(2, 7));
+    const p = sanitizePlan({ title: 'A', focus: '', note: '', exercises: [{ exercise_id: 'db_bench_press', sets: 3, reps: 12, weight: 50 }] }, s, light);
+    expect(p.intensity).toBe('light');
+    expect(p.blocks[0].items[0].weight).toBe(30);
+    const heavy = sanitizePlan({ title: 'A', focus: '', note: '', exercises: [{ exercise_id: 'db_bench_press', sets: 3, reps: 8, weight: 50 }] }, s, scheduleTarget(s, at(7, 7)));
+    expect(heavy.blocks[0].items[0].weight).toBeLessThanOrEqual(40);
   });
 });
 

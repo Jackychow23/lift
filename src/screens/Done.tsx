@@ -1,5 +1,6 @@
 import type { Nav } from '../App';
 import { IconCheck } from '../components/Icons';
+import WeekStrip from '../components/WeekStrip';
 import { useOnline } from '../lib/hooks';
 import { setCounts, weekInfo } from '../lib/planner';
 import { highlights } from '../lib/progress';
@@ -25,7 +26,6 @@ export default function Done({ nav, sessionId }: { nav: Nav; sessionId: string }
   else if (!online) status = { tone: 'var(--accent)', head: `No signal · next up: ${plan?.title ?? ''}`, body: 'Claude writes the plan the next time you open the app with signal. A built-in plan is ready if you\'re still offline.' };
   else status = { tone: 'var(--accent)', head: `Next up: ${plan?.title ?? ''}`, body: `Couldn't reach Claude${state.claude.lastError ? ` (${state.claude.lastError})` : ''}. Built-in plan is ready; it'll retry.` };
 
-  const dayName = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'short' });
 
   return (
     <div className="screen" style={{ paddingTop: 'calc(32px + env(safe-area-inset-top))' }}>
@@ -57,25 +57,15 @@ export default function Done({ nav, sessionId }: { nav: Nav; sessionId: string }
       </section>
 
       <section className="stack" aria-label="This week">
-        <h2 className="label">This week · {wk.regularCount} of 4</h2>
-        <div className="list">
-          {wk.thisWeek.map((s) => (
-            <div key={s.id} className="list-row">
-              <span style={{ fontSize: 15 }}><span className="muted" style={{ display: 'inline-block', width: 44 }}>{dayName(s.finishedAt!)}</span>{s.title}</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--good-ink)' }}>Done</span>
-            </div>
-          ))}
-          <div className="stack" style={{ gap: 2, padding: '12px 14px' }}>
-            <span style={{ fontSize: 15 }}>Bonus day · optional</span>
-            <span className="small" style={{ lineHeight: 1.45 }}>
-              {wk.bonusDone
-                ? 'Done this week.'
-                : wk.bonusAvailable
-                  ? `Unlocked: repeats ${wk.weakest?.title}, your weakest day this week.`
-                  : 'Unlocks after 4 workouts this week. It repeats whichever day went worst.'}
-            </span>
-          </div>
-        </div>
+        <h2 className="label">This week · {wk.regularCount} of {wk.planned}</h2>
+        <WeekStrip state={state} />
+        <span className="small" style={{ lineHeight: 1.45 }}>
+          {wk.bonusDone
+            ? 'Bonus done this week.'
+            : wk.bonusAvailable
+              ? `Optional bonus unlocked: repeats ${wk.weakest?.title}, your weakest day this week.`
+              : `An optional bonus day unlocks after all ${wk.planned} workouts. It repeats whichever day went worst.`}
+        </span>
       </section>
 
       <button type="button" className="btn primary big" style={{ marginTop: 'auto' }} onClick={() => nav.replace({ name: 'today' })}>

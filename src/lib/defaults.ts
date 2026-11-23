@@ -29,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   allowFloor: false,
   sessionMinutes: 30,
   holdMode: 'auto',
+  trainingDays: [0, 1, 2, 3],
   sound: true,
   aboutMe: DEFAULT_ABOUT_ME,
   spanishFocus: DEFAULT_SPANISH_FOCUS

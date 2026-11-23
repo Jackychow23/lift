@@ -17,6 +17,22 @@ export function weekStart(d: Date): Date {
 
 export const sameWeek = (a: Date, b: Date) => weekStart(a).getTime() === weekStart(b).getTime();
 
+export const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+export function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+/** Local calendar date as YYYY-MM-DD. */
+export const isoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** 0 = Monday … 6 = Sunday. */
+export const weekdayIndex = (d: Date) => (d.getDay() + 6) % 7;
+
+export const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
 export const fmtClock = (secs: number) => {
   const s = Math.max(0, Math.round(secs));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;

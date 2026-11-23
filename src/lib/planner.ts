@@ -2,8 +2,8 @@
 // weekly bookkeeping (bonus day) and session helpers.
 import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises';
 import { CALIBRATION_SESSIONS } from './defaults';
-import type { AppState, DayType, Exercise, ExerciseLog, Plan, PlanBlock, Session, Settings } from './types';
-import { e1rm, sameWeek, uid } from './util';
+import type { AppState, DayType, Exercise, ExerciseLog, Intensity, Plan, PlanBlock, Session, Settings } from './types';
+import { addDays, DAY_NAMES, e1rm, isoDate, sameDay, sameWeek, uid, weekdayIndex, weekStart } from './util';
 
 // ───────── equipment & weights ─────────
 
@@ -264,7 +264,17 @@ export interface Target {
  * - missed by 2+ reps or chose a lighter weight → start from what he actually used
  * - at the heaviest dumbbell → keep adding reps, then slow the lowering
  */
-export function nextTarget(ex: Exercise, sessions: Session[], settings: Settings, calibrating: boolean): Target {
+export function nextTarget(ex: Exercise, sessions: Session[], settings: Settings, calibrating: boolean, light = false): Target {
+  // Progression comes from heavy days; a light day's lower weights must not drag it down.
+  const heavy = sessions.filter((x) => x.intensity !== 'light');
+  const base = heavyTarget(ex, lastLogFor(heavy, ex.id) ? heavy : sessions, settings, calibrating);
+  if (!light || ex.load === 'bodyweight') return base;
+  const lighter = availableWeights(ex, settings).filter((w) => w <= base.weight * 0.87);
+  const weight = lighter.length ? lighter[lighter.length - 1] : availableWeights(ex, settings)[0] ?? base.weight;
+  return { weight, reps: Math.min(ex.repRange[1] + 3, base.reps + 3), note: base.note };
+}
+
+function heavyTarget(ex: Exercise, sessions: Session[], settings: Settings, calibrating: boolean): Target {
   const [lo, hi] = ex.repRange;
   const startReps = Math.min(hi, lo + 2);
   if (ex.load === 'bodyweight') {
@@ -331,13 +341,106 @@ export const TEMPLATES: Record<DayType, { title: string; focus: string; items: T
   }
 };
 
-export function nextDayType(s: AppState): DayType {
-  const regular = finished(s).filter((x) => !x.bonus);
-  const last = regular[regular.length - 1];
-  return last?.dayType === 'A' ? 'B' : 'A';
+// ───────── the week: training days, heavy/light, what's next ─────────
+
+export interface Slot {
+  weekday: number;
+  dayType: DayType;
+  intensity: Intensity;
 }
 
-export function buildBuiltinPlan(s: AppState, dayType: DayType = nextDayType(s)): Plan {
+/** The week's workouts: A/B alternate; heavy on the 1st–2nd day in a row, light from the 3rd. */
+export function weekSlots(days: number[]): Slot[] {
+  const sorted = [...new Set(days.filter((d) => d >= 0 && d <= 6))].sort((a, b) => a - b);
+  const list = sorted.length ? sorted : [0, 1, 2, 3];
+  let run = 0;
+  return list.map((d, i) => {
+    run = i > 0 && list[i - 1] === d - 1 ? run + 1 : 1;
+    return { weekday: d, dayType: i % 2 === 0 ? 'A' : 'B', intensity: run >= 3 ? 'light' : 'heavy' };
+  });
+}
+
+export interface ScheduleTarget extends Slot {
+  /** Monday of the week (YYYY-MM-DD). */
+  weekOf: string;
+  /** Which workout of the week (0-based). */
+  slot: number;
+  /** The day it's planned for (YYYY-MM-DD). */
+  date: string;
+  dayName: string;
+}
+
+/** Days (YYYY-MM-DD) with a finished workout, bonus included. */
+export const trainedDates = (s: AppState) => new Set(finished(s).map((x) => isoDate(new Date(x.finishedAt!))));
+
+/** Light on the third day in a row he actually trains; heavy after any rest day. */
+export const intensityOn = (date: Date, trained: Set<string>): Intensity =>
+  trained.has(isoDate(addDays(date, -1))) && trained.has(isoDate(addDays(date, -2))) ? 'light' : 'heavy';
+
+/**
+ * What the next workout is. Within a week it picks up where he left off (miss Wednesday and
+ * Thursday gets Wednesday's workout); once the week's training days are over, it's next Monday's.
+ */
+export function scheduleTarget(s: AppState, now = new Date()): ScheduleTarget {
+  const slots = weekSlots(s.settings.trainingDays);
+  const ws = weekStart(now);
+  const regs = finished(s).filter((x) => !x.bonus && sameWeek(new Date(x.finishedAt!), now));
+  const today = weekdayIndex(now);
+  const trainedToday = regs.some((x) => sameDay(new Date(x.finishedAt!), now));
+  const daysLeft = slots.map((sl) => sl.weekday).filter((d) => d > today || (d === today && !trainedToday));
+  if (regs.length < slots.length && daysLeft.length) {
+    const day = daysLeft[0];
+    const date = addDays(ws, day);
+    const sl = slots[regs.length];
+    return { ...sl, intensity: intensityOn(date, trainedDates(s)), weekOf: isoDate(ws), slot: regs.length, date: isoDate(date), dayName: DAY_NAMES[day] };
+  }
+  const next = addDays(ws, 7);
+  const date = addDays(next, slots[0].weekday);
+  return { ...slots[0], intensity: intensityOn(date, trainedDates(s)), weekOf: isoDate(next), slot: 0, date: isoDate(date), dayName: DAY_NAMES[slots[0].weekday] };
+}
+
+/**
+ * A workout missed earlier this week, offered once no training days are left (e.g. on Friday).
+ * Optional: skipping it is fine, Monday starts the next week either way.
+ */
+export function catchUpTarget(s: AppState, now = new Date()): ScheduleTarget | null {
+  const ws = weekStart(now);
+  if (scheduleTarget(s, now).weekOf === isoDate(ws)) return null;
+  const slots = weekSlots(s.settings.trainingDays);
+  const regs = finished(s).filter((x) => !x.bonus && sameWeek(new Date(x.finishedAt!), now));
+  // Only for a week he's actually been training (not a fresh start mid-week), and not twice in one day.
+  if (!regs.length || regs.length >= slots.length || regs.some((x) => sameDay(new Date(x.finishedAt!), now))) return null;
+  return {
+    ...slots[regs.length],
+    intensity: intensityOn(now, trainedDates(s)),
+    weekOf: isoDate(ws),
+    slot: regs.length,
+    date: isoDate(now),
+    dayName: DAY_NAMES[weekdayIndex(now)]
+  };
+}
+
+export const planMatches = (plan: Plan | null, t: ScheduleTarget) =>
+  !!plan && !plan.bonus && plan.weekOf === t.weekOf && plan.slot === t.slot && plan.dayType === t.dayType && (plan.intensity ?? 'heavy') === t.intensity;
+
+/** Kept for older callers: the next workout's A/B. */
+export const nextDayType = (s: AppState): DayType => scheduleTarget(s).dayType;
+
+const asTarget = (s: AppState, t?: ScheduleTarget | DayType): ScheduleTarget => {
+  if (t && typeof t === 'object') return t;
+  const base = scheduleTarget(s);
+  return t ? { ...base, dayType: t, intensity: 'heavy' } : base;
+};
+
+export const INTENSITY_NOTE: Record<Intensity, string> = {
+  heavy: 'Heavy day: you’ve had rest, so push the main lifts.',
+  light: 'Light day (third day in a row): lighter weights, a few more reps, smooth and fast. Nothing grindy.'
+};
+
+export function buildBuiltinPlan(s: AppState, target?: ScheduleTarget | DayType): Plan {
+  const tg = asTarget(s, target);
+  const dayType = tg.dayType;
+  const light = tg.intensity === 'light';
   const t = TEMPLATES[dayType];
   const calibrating = isCalibrating(s);
   const done = finished(s);
@@ -347,7 +450,7 @@ export function buildBuiltinPlan(s: AppState, dayType: DayType = nextDayType(s))
     const ex = EXERCISE_BY_ID[id];
     if (!ex || !plannable(ex, s.settings) || used.includes(id)) return [];
     used.push(id);
-    const tgt = nextTarget(ex, done, s.settings, calibrating);
+    const tgt = nextTarget(ex, done, s.settings, calibrating, light);
     return [
       {
         label: ex.name,
@@ -370,13 +473,17 @@ export function buildBuiltinPlan(s: AppState, dayType: DayType = nextDayType(s))
   const note = calibrating
     ? n === 0
       ? 'First session: weights start light on purpose. If a set feels easy, add reps; that tells the plan where you really are.'
-      : `Calibration ${n + 1} of ${CALIBRATION_SESSIONS}: weights move up fast while we find your level. Add reps whenever a set feels easy.`
-    : 'Same rules as always: beat the reps and the weight goes up next time.';
+      : `Calibration ${n + 1} of ${CALIBRATION_SESSIONS}: weights move up fast while we find your level. Add reps whenever a set feels easy. ${INTENSITY_NOTE[tg.intensity]}`
+    : `${INTENSITY_NOTE[tg.intensity]} Beat the reps and the weight goes up next time.`;
   return {
     id: uid(),
     createdAt: new Date().toISOString(),
     source: 'builtin',
     dayType,
+    intensity: tg.intensity,
+    weekOf: tg.weekOf,
+    slot: tg.slot,
+    plannedDate: tg.date,
     title: t.title,
     focus: t.focus,
     note,
@@ -407,9 +514,10 @@ export function weekInfo(s: AppState, now = new Date()) {
   const thisWeek = finished(s).filter((x) => x.finishedAt && sameWeek(new Date(x.finishedAt), now));
   const regular = thisWeek.filter((x) => !x.bonus);
   const bonusDone = thisWeek.some((x) => x.bonus);
+  const planned = weekSlots(s.settings.trainingDays).length;
   let weakest: Session | null = null;
   for (const x of regular) if (!weakest || sessionScore(x) < sessionScore(weakest)) weakest = x;
-  return { thisWeek, regularCount: regular.length, bonusDone, bonusAvailable: regular.length >= 4 && !bonusDone && !!weakest, weakest };
+  return { thisWeek, regularCount: regular.length, planned, bonusDone, bonusAvailable: regular.length >= planned && !bonusDone && !!weakest, weakest };
 }
 
 /** Bonus day: repeat the week's weakest session with the same targets, to have another go at it. */
@@ -433,6 +541,7 @@ export function buildBonusPlan(s: AppState): Plan | null {
     createdAt: new Date().toISOString(),
     source: 'builtin',
     dayType: weakest.dayType,
+    intensity: weakest.intensity,
     bonus: true,
     title: `Bonus: ${weakest.title.replace(/^Bonus:\s*/, '')}`,
     focus: 'Another go at your weakest day this week',
@@ -467,6 +576,7 @@ export function startSession(plan: Plan): Session {
     planSource: plan.source,
     dayType: plan.dayType,
     bonus: plan.bonus,
+    intensity: plan.intensity,
     title: plan.title,
     startedAt: new Date().toISOString(),
     blocks: plan.blocks.map((b) => ({ label: b.label, kind: b.kind, restSeconds: b.restSeconds })),
@@ -525,7 +635,7 @@ export function cableSwap(session: Session, settings: Settings, history: Session
     }
     if (!to) return;
     const ex = EXERCISE_BY_ID[to];
-    const t = nextTarget(ex, history, settings, calibrating);
+    const t = nextTarget(ex, history, settings, calibrating, session.intensity === 'light');
     changes.push([log.exerciseId, to]);
     log.exerciseId = to;
     log.holdSeconds = ex.holdSeconds;
@@ -554,9 +664,12 @@ export interface RawPlan { title: string; focus: string; note: string; exercises
  * real dumbbell/stack weights, no jump of more than two notches over what he
  * last lifted, ~15 working sets, one exercise at a time, dumbbells before cables.
  */
-export function sanitizePlan(raw: RawPlan, s: AppState, dayType: DayType): Plan {
+export function sanitizePlan(raw: RawPlan, s: AppState, target?: ScheduleTarget | DayType): Plan {
+  const tg = asTarget(s, target);
+  const dayType = tg.dayType;
   const calibrating = isCalibrating(s);
   const done = finished(s);
+  const heavyDone = done.filter((x) => x.intensity !== 'light');
   const used: string[] = [];
   let budget = 15;
   const flat: { it: RawPlanItem; rest?: number }[] = Array.isArray(raw.exercises)
@@ -576,10 +689,11 @@ export function sanitizePlan(raw: RawPlan, s: AppState, dayType: DayType): Plan 
     const sets = Math.max(1, Math.min(5, Math.round(Number(it.sets) || 3), budget));
     budget -= sets;
     let weight = ex.load === 'bodyweight' ? 0 : roundToAvailable(ex, Number(it.weight) || ex.start, s.settings);
-    const last = lastLogFor(done, id);
+    const last = lastLogFor(heavyDone, id) ?? lastLogFor(done, id);
     if (ex.load !== 'bodyweight') {
       const ref = last ? workingSet(last).weight : ex.start;
-      const cap = stepWeight(ex, ref, calibrating ? 2 : 1, s.settings);
+      // Light days never go above the last heavy weight; heavy days move at most 1 step (2 in calibration).
+      const cap = stepWeight(ex, ref, tg.intensity === 'light' ? 0 : calibrating ? 2 : 1, s.settings);
       if (weight > cap) weight = cap;
     }
     const reps = Math.max(1, Math.min(30, Math.round(Number(it.reps) || ex.repRange[0])));
@@ -599,6 +713,10 @@ export function sanitizePlan(raw: RawPlan, s: AppState, dayType: DayType): Plan 
     createdAt: new Date().toISOString(),
     source: 'claude',
     dayType,
+    intensity: tg.intensity,
+    weekOf: tg.weekOf,
+    slot: tg.slot,
+    plannedDate: tg.date,
     title: String(raw.title || TEMPLATES[dayType].title).slice(0, 40),
     focus: String(raw.focus || '').slice(0, 80),
     note: String(raw.note || '').slice(0, 280),

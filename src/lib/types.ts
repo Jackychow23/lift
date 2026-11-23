@@ -64,12 +64,21 @@ export interface PlanBlock {
 
 export type DayType = 'A' | 'B';
 
+/** Heavy = first or second day after a rest day; light = third+ day in a row. */
+export type Intensity = 'heavy' | 'light';
+
 export interface Plan {
   id: string;
   createdAt: string;
   source: 'claude' | 'builtin';
   dayType: DayType;
   bonus?: boolean;
+  intensity?: Intensity;
+  /** Which week (its Monday, YYYY-MM-DD) and which workout of that week this plan is for. */
+  weekOf?: string;
+  slot?: number;
+  /** The day it's planned for (YYYY-MM-DD). */
+  plannedDate?: string;
   title: string;
   focus: string;
   note: string;
@@ -104,6 +113,7 @@ export interface Session {
   planSource: Plan['source'];
   dayType: DayType;
   bonus?: boolean;
+  intensity?: Intensity;
   title: string;
   startedAt: string;
   finishedAt?: string;
@@ -137,6 +147,8 @@ export interface Settings {
   sessionMinutes: number;
   /** Timed holds (chin tucks): run every rep automatically, or wait for a tap before each one. */
   holdMode: 'auto' | 'tap';
+  /** Training days, 0 = Monday … 6 = Sunday. The rest are rest days. */
+  trainingDays: number[];
   sound: boolean;
   /** Free text the coach reads every time — goals, injuries, likes, dislikes. */
   aboutMe: string;

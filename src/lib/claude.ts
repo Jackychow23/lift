@@ -1,10 +1,10 @@
 // Talks to the Claude API straight from the phone. The key stays on the phone.
 import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises';
 import { CALIBRATION_SESSIONS } from './defaults';
-import { finished, isCalibrating, nextDayType, plannable, regularCount, sanitizePlan, weekInfo, type RawPlan } from './planner';
+import { finished, isCalibrating, plannable, regularCount, sanitizePlan, scheduleTarget, weekInfo, weekSlots, type RawPlan, type ScheduleTarget } from './planner';
 import { allCards, cleanContexts, cleanNewCards, cleanStories, recentAccuracy, stats } from './srs';
-import type { AppState, Assessment, Context, DayType, Plan, Settings, SpanishCard, Story } from './types';
-import { daysBetween } from './util';
+import type { AppState, Assessment, Context, Plan, Settings, SpanishCard, Story } from './types';
+import { DAY_NAMES, daysBetween } from './util';
 
 const API = 'https://api.anthropic.com/v1/messages';
 
@@ -135,6 +135,7 @@ Rules for every plan:
 - Progress gradually: at most one weight step up from what he last actually lifted (two during calibration if he clearly blew past the target). If he lowered a weight, start from what he used.
 - When a dumbbell exercise reaches his heaviest dumbbell, progress with reps, slower lowering, pauses or the one-arm version instead of weight; say so in the item's note.
 - Calibration: his first ${CALIBRATION_SESSIONS} regular sessions find his working weights. Move faster then.
+- Weekly rhythm: heavy days right after rest days, light days on the 3rd+ day in a row (all sessions are upper body, so the same muscles work on back-to-back days). The workout's day and intensity are given below; follow them.
 - The "note" is 1–2 short sentences to him in plain words, no hype, no emojis. Item notes are optional, under 15 words.`;
 
 function exerciseCatalog(settings: Settings): string {
@@ -151,7 +152,7 @@ function historyText(s: AppState, limit = 12): string {
   if (!xs.length) return 'No workouts logged yet.';
   return xs
     .map((x) => {
-      const head = `${x.finishedAt!.slice(0, 10)} · ${x.title}${x.bonus ? ' (bonus repeat)' : ''} · day ${x.dayType}`;
+      const head = `${x.finishedAt!.slice(0, 10)} (${DAY_NAMES[(new Date(x.finishedAt!).getDay() + 6) % 7]}) · ${x.title}${x.bonus ? ' (bonus repeat)' : ''} · day ${x.dayType} · ${x.intensity ?? 'heavy'}`;
       const lines = x.exercises.map((e) => {
         const t = e.sets[0]?.target;
         const planned = e.sets.filter((z) => !z.extra).length;
@@ -216,8 +217,10 @@ function planTool(settings: Settings, withAssessment: boolean) {
   };
 }
 
-export async function requestPlan(s: AppState, opts: { dayType?: DayType } = {}): Promise<{ plan: Plan; assessment: Assessment | null }> {
-  const dayType = opts.dayType ?? nextDayType(s);
+export async function requestPlan(s: AppState, opts: { target?: ScheduleTarget } = {}): Promise<{ plan: Plan; assessment: Assessment | null }> {
+  const target = opts.target ?? scheduleTarget(s);
+  const dayType = target.dayType;
+  const slots = weekSlots(s.settings.trainingDays);
   const withAssessment = needsAssessment(s);
   const wk = weekInfo(s);
   const n = regularCount(s);
@@ -237,8 +240,12 @@ ${exerciseCatalog(settings)}
 
 STATUS
 Regular sessions done: ${n}${isCalibrating(s) ? ` (calibration: session ${n + 1} of ${CALIBRATION_SESSIONS} is next)` : ''}
-This week: ${wk.regularCount} regular session(s) done.
-Next session should be day ${dayType} (days alternate A/B; A leans on horizontal press/row, B on overhead press/pulldown).
+WEEKLY SCHEDULE: he trains ${slots.map((x) => DAY_NAMES[x.weekday]).join(', ')}; the other days are rest. ${slots.map((x) => `${DAY_NAMES[x.weekday]} = day ${x.dayType} ${x.intensity}`).join('; ')}. A bonus day (optional) can follow once the week's workouts are done.
+This week: ${wk.regularCount} of ${slots.length} workouts done. If he missed a day, he picks up where he left off — don't try to make up missed work. Heavy/light follows the days he actually trains in a row (a rest day resets it to heavy).
+NEXT WORKOUT: ${target.dayName} (${target.date}) — workout ${target.slot + 1} of ${slots.length} this week — day ${dayType} (A leans on horizontal press/row, B on overhead press/pulldown) — ${target.intensity.toUpperCase()} day.
+${target.intensity === 'light'
+  ? 'LIGHT DAY (third+ day in a row): main lifts about 10–15% lighter than his last heavy day, 2–3 more reps, same exercises or close variations. Never heavier than his last heavy-day weight. Keep accessories easy-moderate. The point is practice and recovery, not a test.'
+  : 'HEAVY DAY (first or second training day in a row): progress the main lifts from his last HEAVY day for each exercise (ignore light-day weights when progressing).'}
 ${s.assessment ? `Current weak-point notes (${s.assessment.date.slice(0, 10)}): ${s.assessment.text}` : 'No weak-point assessment yet.'}
 
 POSTURE CHECKS
@@ -257,7 +264,7 @@ Write his next workout with submit_workout.${withAssessment ? ' Also include an 
     messages: [{ role: 'user', content: user }]
   });
   const raw = toolInput<RawPlan & { assessment?: string }>(resp, 'submit_workout');
-  const plan = sanitizePlan(raw, s, dayType);
+  const plan = sanitizePlan(raw, s, target);
   const assessment =
     withAssessment && typeof raw.assessment === 'string' && raw.assessment.trim()
       ? { date: new Date().toISOString(), text: raw.assessment.trim().slice(0, 800) }
