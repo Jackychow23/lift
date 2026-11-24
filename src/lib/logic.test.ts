@@ -22,7 +22,7 @@ import {
   station,
   weekInfo
 } from './planner';
-import { answer, buildQuestion, maskAnswer, cleanStories, contextsFor, findHighlight, nextQuestion, pickCard, stats } from './srs';
+import { answer, buildQuestion, maskAnswer, stripArticle, cleanStories, contextsFor, findHighlight, nextQuestion, pickCard, stats } from './srs';
 import type { AppState, Session } from './types';
 
 // Week of Monday 16 Nov 2026, local time.
@@ -394,6 +394,27 @@ describe('weekly schedule', () => {
 });
 
 describe('Spanish cards', () => {
+  it('never leaves the Spanish word in the English it shows (colectivo → shared van)', () => {
+    const sp = freshState().spanish;
+    const leaks: string[] = [];
+    for (const card of BASE_DECK) {
+      const bare = stripArticle(card.word).toLowerCase();
+      const meaning = card.en.replace(/^(the|a|an|to)\s+/i, '').toLowerCase();
+      if (bare === meaning) continue; // taxi, tortilla, pesos
+      const re = new RegExp(`(^|[^\\p{L}])${bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}s?(?=[^\\p{L}]|$)`, 'u');
+      for (const ctx of contextsFor(card, sp))
+        for (const mode of ['word', 'cloze', 'sentence', 'reverse'] as const) {
+          const q = buildQuestion(card, mode, BASE_DECK, () => 0.4, ctx);
+          const shown = [q.promptLang === 'en' ? q.prompt : '', q.support ?? '', ...(q.optionsLang === 'en' ? q.options : [])];
+          for (const t of shown) if (re.test(t)) leaks.push(`${card.word} (${mode}): ${t}`);
+        }
+    }
+    expect(leaks).toEqual([]);
+    expect(maskAnswer('The colectivo comes by every fifteen minutes.', BASE_DECK.find((c) => c.word === 'el colectivo')!)).toBe('The shared van comes by every fifteen minutes.');
+    expect(maskAnswer('Colectivos are cheap.', BASE_DECK.find((c) => c.word === 'el colectivo')!)).toBe('Shared vans are cheap.');
+    expect(maskAnswer('The bus goes to Playa del Carmen.', BASE_DECK.find((c) => c.word === 'la playa')!)).toBe('The bus goes to Playa del Carmen.');
+  });
+
   it('deck is well-formed', () => {
     expect(BASE_DECK.length).toBeGreaterThan(100);
     expect(migrate({ settings: {}, sessions: [], spanish: { extraCards: [{ id: 'x' }], contexts: { a: [] }, stories: [{}] } }).spanish.extraCards).toEqual([]);

@@ -151,7 +151,14 @@ export function maskAnswer(en: string, card: SpanishCard): string {
   const meaning = card.en.replace(/^(the|a|an|to)\s+/i, '');
   if (meaning.toLowerCase() === bare.toLowerCase()) return en; // same word in both languages (taxi, tortilla)
   const esc = bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return en.replace(new RegExp(`(^|[^\\p{L}])(${esc})s?(?=[^\\p{L}]|$)`, 'giu'), (_m, pre) => `${pre}${meaning}`);
+  return en.replace(new RegExp(`(^|[^\\p{L}])(${esc})s?(?=[^\\p{L}]|$)`, 'giu'), (m: string, pre: string, word: string, offset: number) => {
+    // A capitalized word mid-sentence is a name (Playa del Carmen): leave it.
+    const start = offset + pre.length;
+    if (start > 0 && word.charAt(0) !== word.charAt(0).toLowerCase()) return m;
+    const plural = m.length > pre.length + word.length ? 's' : '';
+    const out = (start === 0 ? meaning.charAt(0).toUpperCase() + meaning.slice(1) : meaning) + plural;
+    return `${pre}${out}`;
+  });
 }
 
 export function buildQuestion(
@@ -181,8 +188,9 @@ export function buildQuestion(
       explain: `${card.word} = ${card.en}.${hook}`
     };
   } else if (mode === 'sentence') {
-    correct = context.en;
-    others = distractors(card, pool, (c) => c.sentenceEn, 3, rand, correct);
+    // English never keeps the Spanish word (colectivo → shared van), or it gives the answer away.
+    correct = maskAnswer(context.en, card);
+    others = distractors(card, pool, (c) => maskAnswer(maskAnswer(c.sentenceEn, c), card), 3, rand, correct);
     q = {
       card, mode, prompt: context.es, promptLang: 'es', highlight: null, support: null,
       question: 'What does this sentence mean?', optionsLang: 'en', context,
@@ -192,7 +200,7 @@ export function buildQuestion(
     correct = card.word;
     others = distractors(card, pool, (c) => c.word, 3, rand, correct);
     q = {
-      card, mode, prompt: context.en, promptLang: 'en', highlight: null, support: null,
+      card, mode, prompt: maskAnswer(context.en, card), promptLang: 'en', highlight: null, support: null,
       question: `Which word means “${card.en}”?`, optionsLang: 'es', context,
       explain: `“${context.es}”${hook}`
     };
@@ -202,7 +210,7 @@ export function buildQuestion(
     q = {
       card, mode: 'word', prompt: context.es, promptLang: 'es', highlight: hl, support: null,
       question: `What does “${card.word}” mean?`, optionsLang: 'en', context,
-      explain: `${card.word} = ${card.en}. “${context.es}” means “${context.en}”.${hook}`
+      explain: `${card.word} = ${card.en}. “${context.es}” means “${maskAnswer(context.en, card)}”.${hook}`
     };
   }
   const options = shuffle([correct, ...others], rand);

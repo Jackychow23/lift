@@ -27,8 +27,8 @@ const ROWS: Row[] = [
   ['la esquina', 'the corner', 'Déjeme en la esquina, por favor.', 'Drop me off at the corner, please.', 1, 'directions'],
   ['cerca', 'near', '¿Hay un cajero cerca?', 'Is there an ATM nearby?', 1, 'directions', 'Same root as “circa” (around): close around you.'],
   ['lejos', 'far', '¿Está lejos de aquí?', 'Is it far from here?', 1, 'directions', 'Picture tired “legs”: it’s far.'],
-  ['la parada', 'the stop', '¿Dónde está la parada del colectivo?', 'Where is the colectivo stop?', 1, 'transport', 'From “parar” (to stop): where the bus stops.'],
-  ['el colectivo', 'the shared van', 'El colectivo pasa cada quince minutos.', 'The colectivo comes by every fifteen minutes.', 1, 'transport', 'A “collective” van: everyone shares it.'],
+  ['la parada', 'the stop', '¿Dónde está la parada del colectivo?', 'Where is the shared van stop?', 1, 'transport', 'From “parar” (to stop): where the bus stops.'],
+  ['el colectivo', 'the shared van', 'El colectivo pasa cada quince minutos.', 'The shared van comes by every fifteen minutes.', 1, 'transport', 'A “collective” van: everyone shares it.'],
   ['el camión', 'the bus', 'El camión va a Playa del Carmen.', 'The bus goes to Playa del Carmen.', 1, 'transport', 'In Mexico “camión” is a bus (elsewhere it means truck).'],
   ['el boleto', 'the ticket', 'Un boleto para Cancún, por favor.', 'One ticket to Cancún, please.', 1, 'transport', 'Think “ballot”: a slip of paper.'],
   ['la estación', 'the station', '¿Dónde está la estación del tren?', 'Where is the train station?', 1, 'transport', 'Looks like “station”.'],
@@ -131,7 +131,7 @@ const ROWS: Row[] = [
   // ── Places and the beach ──
   ['la playa', 'the beach', 'Vamos a la playa mañana.', "We're going to the beach tomorrow.", 1, 'places', 'Picture the beach as the place to play.'],
   ['el mar', 'the sea', 'El mar está muy bonito hoy.', 'The sea looks beautiful today.', 1, 'places', 'Think “marine” and “mariner”.'],
-  ['el cenote', 'the natural swimming hole', '¿Cuánto cuesta la entrada al cenote?', 'How much is entry to the cenote?', 1, 'places', 'A Maya word for a natural swimming hole.'],
+  ['el cenote', 'the natural swimming hole', '¿Cuánto cuesta la entrada al cenote?', 'How much is entry to the swimming hole?', 1, 'places', 'A Maya word for a natural swimming hole.'],
   ['las ruinas', 'the ruins', 'Las ruinas abren a las ocho.', 'The ruins open at eight.', 1, 'places', 'Looks like “ruins”.'],
   ['la entrada', 'the entrance, the ticket', 'La entrada es por aquí.', 'The entrance is this way.', 1, 'places', 'Think “enter”.'],
   ['abierto', 'open', '¿Está abierto hoy?', 'Is it open today?', 1, 'places', 'Think “aperture”, an opening.'],
@@ -163,7 +163,7 @@ const ROWS: Row[] = [
   // ── Level 2: Mexican expressions and past tense ──
   ['¿mande?', 'pardon?', '¿Mande? No escuché.', "Sorry? I didn't hear.", 2, 'talk', 'A very Mexican, polite way to say “what?”.'],
   ['ahorita', 'in a moment', 'Ahorita vengo.', "I'll be right back.", 2, 'time', '“Ahora” (now) + “-ita” (little): could mean right now… or later.'],
-  ['¡qué padre!', 'how cool!', '¡Qué padre está el cenote!', 'This cenote is so cool!', 2, 'talk', 'Mexican slang: “padre” (father) means cool.'],
+  ['¡qué padre!', 'how cool!', '¡Qué padre está el cenote!', 'This swimming hole is so cool!', 2, 'talk', 'Mexican slang: “padre” (father) means cool.'],
   ['tal vez', 'maybe', 'Tal vez mañana.', 'Maybe tomorrow.', 2, 'talk', 'Literally “such a time”.'],
   ['perdón', 'sorry', 'Perdón, fue sin querer.', "Sorry, I didn't mean to.", 2, 'talk', 'Think “pardon”.'],
   ['perdí', 'I lost', 'Perdí mi teléfono.', 'I lost my phone.', 2, 'help', 'From “perder”, like “perdition” (being lost).'],
