@@ -1,5 +1,8 @@
 import { useRef, useState } from 'react';
 import { testConnection } from '../lib/claude';
+import NotesPanel from '../components/NotesPanel';
+import { testGithub, unsent } from '../lib/notes';
+import { canSpeak, speak, useSpanishVoice } from '../lib/speech';
 import { DEFAULT_ABOUT_ME, DEFAULT_SPANISH_FOCUS, freshState } from '../lib/defaults';
 import { useOnline } from '../lib/hooks';
 import { stats } from '../lib/srs';
@@ -13,14 +16,18 @@ const EQUIPMENT: [EquipmentKey, string][] = [
   ['flat_bench', 'Flat bench'],
   ['adjustable_bench', 'Adjustable (incline) bench'],
   ['rope', 'Cable rope'],
-  ['lat_bar', 'Lat pulldown bar'],
+  ['pulldown_row', 'Pulldown / seated row machine'],
   ['v_bar', 'V-handle'],
   ['d_handle', 'Single handle'],
   ['straight_bar', 'Short straight bar']
 ];
 
 export default function SettingsScreen() {
-  const { state, update, coachBusy, refreshPlan, ensureSchedule } = useStore();
+  const { state, update, coachBusy, refreshPlan, ensureSchedule, syncNotes } = useStore();
+  const [showGh, setShowGh] = useState(false);
+  const [ghTest, setGhTest] = useState<string | null>(null);
+  const voice = useSpanishVoice();
+  const waiting = unsent(state.notes).length;
   const online = useOnline();
   const s = state.settings;
   const [showKey, setShowKey] = useState(false);
@@ -61,7 +68,7 @@ export default function SettingsScreen() {
 
   const restore = async (file: File) => {
     try {
-      const next = importJson(await file.text(), s.apiKey);
+      const next = importJson(await file.text(), s.apiKey, s.githubToken);
       update(() => next);
       setMsg(`Restored ${next.sessions.length} workouts.`);
     } catch (e) {
@@ -201,6 +208,18 @@ export default function SettingsScreen() {
             <input className="input" inputMode="decimal" type="number" min={10} value={s.cableMax} onChange={(e) => Number(e.target.value) > 0 && set({ cableMax: Number(e.target.value) })} />
           </label>
         </div>
+        {s.equipment.pulldown_row && (
+          <div className="row">
+            <label className="field grow">
+              <span>Pulldown/row machine step (lb)</span>
+              <input className="input" inputMode="decimal" type="number" min={1} value={s.machineIncrement} onChange={(e) => Number(e.target.value) > 0 && set({ machineIncrement: Number(e.target.value) })} />
+            </label>
+            <label className="field grow">
+              <span>Machine max (lb)</span>
+              <input className="input" inputMode="decimal" type="number" min={10} value={s.machineMax} onChange={(e) => Number(e.target.value) > 0 && set({ machineMax: Number(e.target.value) })} />
+            </label>
+          </div>
+        )}
         <div className="list" style={{ background: 'var(--bg)' }}>
           {EQUIPMENT.map(([k, label]) => (
             <label key={k} className="toggle">
@@ -233,10 +252,99 @@ export default function SettingsScreen() {
         </label>
         <p className="small" style={{ margin: 0, lineHeight: 1.5 }}>Claude reads this when it writes new words, example sentences and mini-stories. Change it when your plans change.</p>
         <button type="button" className="btn ghost" style={{ alignSelf: 'flex-start' }} onClick={() => set({ spanishFocus: DEFAULT_SPANISH_FOCUS })}>Reset to the Tulum trip</button>
+        <div className="between" style={{ gap: 10 }}>
+          <p className="small" style={{ margin: 0, lineHeight: 1.5 }}>
+            {!canSpeak()
+              ? 'This browser can’t read words out loud.'
+              : voice
+                ? `Pronunciation voice: ${voice.name} (${voice.lang})${voice.localService ? '' : ', needs a connection'}.`
+                : 'No Spanish voice found yet. On the phone: Settings → General management → Text-to-speech → (the engine’s settings) → install Spanish (Mexico or US). Then reopen the app.'}
+          </p>
+          {canSpeak() && (
+            <button type="button" className="btn" style={{ flex: 'none' }} onClick={() => speak('¿Cuánto cuesta al centro?')}>
+              Test
+            </button>
+          )}
+        </div>
         <p className="small" style={{ margin: 0, lineHeight: 1.5 }}>
           Spanish: level {sp.level} · {sp.seen} words seen · {sp.mastered} well learned · {sp.unseen} new waiting
           {state.spanish.extraCards.length ? ` · ${state.spanish.extraCards.length} written by Claude` : ''}.
         </p>
+      </section>
+
+      <section className="card stack" aria-label="Notes">
+        <span style={{ fontSize: 15, fontWeight: 600 }}>Notes</span>
+        <p className="small" style={{ margin: 0, lineHeight: 1.5 }}>
+          Notes you save during a workout stay on this phone, and the coach reads recent ones when it plans. To send them where Claude in chat can read them, connect a private GitHub repo: each note becomes an issue there as soon as you're online.
+        </p>
+        <label className="field">
+          <span>Private repo for notes</span>
+          <input className="input" value={s.githubRepo} autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(e) => set({ githubRepo: e.target.value.trim() })} />
+        </label>
+        <label className="field">
+          <span>GitHub token (Issues: read and write)</span>
+          <div className="row">
+            <input
+              className="input grow"
+              type={showGh ? 'text' : 'password'}
+              value={s.githubToken}
+              placeholder="github_pat_…"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              onChange={(e) => set({ githubToken: e.target.value.trim() })}
+              onBlur={() => void syncNotes()}
+            />
+            <button type="button" className="btn" onClick={() => setShowGh(!showGh)}>{showGh ? 'Hide' : 'Show'}</button>
+          </div>
+        </label>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn"
+            disabled={!online}
+            onClick={async () => {
+              setGhTest('Checking…');
+              try {
+                setGhTest(await testGithub(s));
+                void syncNotes(true);
+              } catch (e) {
+                setGhTest((e as Error).message);
+              }
+            }}
+          >
+            Test
+          </button>
+          {waiting > 0 && (
+            <button type="button" className="btn" disabled={!online || !s.githubToken} onClick={() => void syncNotes(true)}>
+              Send {waiting} waiting
+            </button>
+          )}
+        </div>
+        {ghTest && <p className="small" style={{ margin: 0 }} aria-live="polite">{ghTest}</p>}
+        {state.notes.length > 0 && (
+          <button
+            type="button"
+            className="btn ghost"
+            style={{ alignSelf: 'flex-start' }}
+            onClick={async () => {
+              const text = state.notes
+                .slice(-20)
+                .map((n) => `${new Date(n.at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${n.where ? ` (${n.where})` : ''}: ${n.text}`)
+                .join('\n');
+              try {
+                await navigator.clipboard.writeText(text);
+                setGhTest('Copied your last notes. Paste them into a chat.');
+              } catch {
+                setGhTest('Couldn’t copy on this phone.');
+              }
+            }}
+          >
+            Copy recent notes
+          </button>
+        )}
+        <p className="small" style={{ margin: 0, lineHeight: 1.5 }}>The token stays on this phone and is left out of backups.</p>
+        <NotesPanel where="Outside a workout" filter={(n) => state.notes.indexOf(n) >= state.notes.length - 20} placeholder="Write a note…" />
       </section>
 
       <section className="card stack" aria-label="Data">
@@ -252,7 +360,7 @@ export default function SettingsScreen() {
           <button type="button" className="btn ghost" style={{ alignSelf: 'flex-start', color: 'var(--bad-ink)' }} onClick={() => setConfirmReset(true)}>Erase everything…</button>
         ) : (
           <div className="row" style={{ flexWrap: 'wrap' }}>
-            <button type="button" className="btn danger" onClick={() => { update(() => ({ ...freshState(), settings: { ...freshState().settings, apiKey: s.apiKey } })); setConfirmReset(false); }}>
+            <button type="button" className="btn danger" onClick={() => { update(() => ({ ...freshState(), settings: { ...freshState().settings, apiKey: s.apiKey, githubToken: s.githubToken, githubRepo: s.githubRepo } })); setConfirmReset(false); }}>
               Yes, erase all workouts and progress
             </button>
             <button type="button" className="btn" onClick={() => setConfirmReset(false)}>Cancel</button>

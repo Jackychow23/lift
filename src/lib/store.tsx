@@ -2,8 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { requestCards, requestContexts, requestPlan, requestStories } from './claude';
 import { buildBuiltinPlan, estimateSeconds, fitToTime, planMatches, scheduleTarget, startSession, toStraightSets } from './planner';
 import { allCards, contextsFor, stats } from './srs';
+import { NoteSetupError, sendNote, unsent } from './notes';
 import { loadState, requestPersistence, saveState } from './storage';
-import type { AppState, Plan } from './types';
+import type { AppState, Note, Plan } from './types';
+import { uid } from './util';
 
 interface Store {
   state: AppState;
@@ -17,6 +19,11 @@ interface Store {
   discardWorkout: () => void;
   /** Re-target the plan to the schedule (after changing training days). */
   ensureSchedule: () => boolean;
+  /** Save a note on the phone now; it's sent to GitHub once there's a connection. */
+  addNote: (text: string, extra?: Pick<Note, 'where' | 'sessionId'>) => void;
+  deleteNote: (id: string) => void;
+  /** Try sending waiting notes now. */
+  syncNotes: (force?: boolean) => Promise<void>;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -37,6 +44,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [coachBusy, setCoachBusy] = useState(false);
   const lastAuto = useRef(0);
   const lastCards = useRef(0);
+  const notesBusy = useRef(false);
+  /** token+repo that last failed setup: don't keep retrying it until it changes. */
+  const badNoteSetup = useRef<string | null>(null);
 
   const commit = useCallback((next: AppState) => {
     ref.current = next;
@@ -121,6 +131,54 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [update, topUpSpanish]
   );
 
+  const syncNotes = useCallback(async (force = false) => {
+    const s = ref.current;
+    if (!s || notesBusy.current || !navigator.onLine) return;
+    if (force) badNoteSetup.current = null;
+    const key = `${s.settings.githubToken.trim()}|${s.settings.githubRepo.trim()}`;
+    if (!s.settings.githubToken.trim() || badNoteSetup.current === key) return;
+    const todo = unsent(s.notes);
+    if (!todo.length) return;
+    notesBusy.current = true;
+    const mark = (id: string, patch: Partial<Note>) =>
+      update((cur) => ({ ...cur, notes: cur.notes.map((n) => (n.id === id ? { ...n, ...patch } : n)) }));
+    try {
+      for (const n of todo) {
+        if (!ref.current?.notes.some((x) => x.id === n.id && !x.sentAt)) continue; // deleted or sent meanwhile
+        try {
+          const url = await sendNote(n, s.settings);
+          mark(n.id, { sentAt: new Date().toISOString(), url, error: undefined });
+        } catch (e) {
+          if (e instanceof NoteSetupError) {
+            badNoteSetup.current = key;
+            mark(n.id, { error: e.message });
+          }
+          break; // offline or a setup problem: try again later
+        }
+      }
+    } finally {
+      notesBusy.current = false;
+    }
+  }, [update]);
+
+  const addNote = useCallback(
+    (text: string, extra: Pick<Note, 'where' | 'sessionId'> = {}) => {
+      const t = text.trim();
+      if (!t) return;
+      update((cur) => ({ ...cur, notes: [...cur.notes, { id: uid(), text: t, at: new Date().toISOString(), ...extra }] }));
+      void syncNotes();
+    },
+    [update, syncNotes]
+  );
+
+  const deleteNote = useCallback((id: string) => update((cur) => ({ ...cur, notes: cur.notes.filter((n) => n.id !== id) })), [update]);
+
+  // Waiting notes: keep trying every minute while the app is open.
+  useEffect(() => {
+    const t = window.setInterval(() => void syncNotes(), 60_000);
+    return () => window.clearInterval(t);
+  }, [syncNotes]);
+
   /** If the saved plan is for a different day of the schedule (new week, missed days, changed training days), replace it. */
   const ensureSchedule = useCallback((): boolean => {
     const s = ref.current;
@@ -151,14 +209,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const moved = ensureSchedule();
       lastAuto.current = Date.now();
       void refreshPlan(fixed.changed || moved);
+      void syncNotes();
     });
-  }, [commit, refreshPlan, ensureSchedule]);
+  }, [commit, refreshPlan, ensureSchedule, syncNotes]);
 
   // Save right away when the app is hidden; check for a better plan when it comes back or goes online.
   useEffect(() => {
     const onVis = () => {
       if (document.visibilityState === 'hidden' && ref.current) void saveState(ref.current);
       if (document.visibilityState === 'visible') {
+        void syncNotes();
         // A new day can mean a new week or a missed day: re-target right away, offline too.
         const moved = ensureSchedule();
         if (moved || Date.now() - lastAuto.current > AUTO_EVERY_MS) {
@@ -170,6 +230,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const onOnline = () => {
       lastAuto.current = Date.now();
       void refreshPlan();
+      void syncNotes();
     };
     const onHide = () => ref.current && void saveState(ref.current);
     document.addEventListener('visibilitychange', onVis);
@@ -180,7 +241,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('pagehide', onHide);
     };
-  }, [refreshPlan, ensureSchedule]);
+  }, [refreshPlan, ensureSchedule, syncNotes]);
 
   const startWorkout = useCallback((plan: Plan) => update((s) => (s.active ? s : { ...s, active: startSession(plan) })), [update]);
 
@@ -207,8 +268,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [commit, refreshPlan]);
 
   const value = useMemo(
-    () => (state ? { state, update, coachBusy, refreshPlan, startWorkout, finishWorkout, discardWorkout, ensureSchedule } : null),
-    [state, update, coachBusy, refreshPlan, startWorkout, finishWorkout, discardWorkout, ensureSchedule]
+    () => (state ? { state, update, coachBusy, refreshPlan, startWorkout, finishWorkout, discardWorkout, ensureSchedule, addNote, deleteNote, syncNotes } : null),
+    [state, update, coachBusy, refreshPlan, startWorkout, finishWorkout, discardWorkout, ensureSchedule, addNote, deleteNote, syncNotes]
   );
 
   if (!value) return <div className="boot" aria-busy="true" />;

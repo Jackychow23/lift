@@ -16,6 +16,8 @@ export const DEFAULT_SETTINGS: Settings = {
   dumbbells: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
   cableIncrement: 5,
   cableMax: 200,
+  machineIncrement: 5,
+  machineMax: 225,
   equipment: {
     flat_bench: true,
     adjustable_bench: false,
@@ -23,7 +25,8 @@ export const DEFAULT_SETTINGS: Settings = {
     lat_bar: true,
     v_bar: true,
     d_handle: true,
-    straight_bar: true
+    straight_bar: true,
+    pulldown_row: true
   },
   includeLegs: false,
   allowFloor: false,
@@ -32,7 +35,9 @@ export const DEFAULT_SETTINGS: Settings = {
   trainingDays: [0, 1, 2, 3],
   sound: true,
   aboutMe: DEFAULT_ABOUT_ME,
-  spanishFocus: DEFAULT_SPANISH_FOCUS
+  spanishFocus: DEFAULT_SPANISH_FOCUS,
+  githubToken: '',
+  githubRepo: 'Jackychow23/lift-notes'
 };
 
 export function freshState(): AppState {
@@ -45,7 +50,8 @@ export function freshState(): AppState {
     posture: [],
     assessment: null,
     spanish: { progress: {}, extraCards: [], recent: [], contexts: {}, stories: [] },
-    claude: { lastError: null, lastSuccess: null }
+    claude: { lastError: null, lastSuccess: null },
+    notes: []
   };
 }
 
@@ -68,6 +74,7 @@ export function migrate(raw: unknown): AppState {
     },
     sessions: Array.isArray(s.sessions) ? s.sessions : [],
     posture: Array.isArray(s.posture) ? s.posture : [],
+    notes: Array.isArray(s.notes) ? s.notes : [],
     spanish: {
       progress: s.spanish?.progress ?? {},
       extraCards: preTravel ? [] : s.spanish?.extraCards ?? [],

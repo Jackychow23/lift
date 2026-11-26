@@ -125,7 +125,7 @@ Rules for every plan:
 - One exercise at a time: straight sets, no supersets or pairs. List exercises in the order he does them.
 - TIME LIMIT: the whole workout must fit in his time limit (given below), counting everything: about 45 s to set up each exercise, about 75 s of his own warm-up sets before each main lift, each working set (about 40 s; one-arm exercises about 80 s since both sides are done), and the rests between sets. That's usually 4–5 exercises and 10–12 working sets for 30 minutes. He trains upper body 4–5 days a week, so each session doesn't need to do everything. The app trims plans that run over, cutting accessories first.
 - Rest (rest_seconds per exercise): 120–180 s for main presses and pulls, 60–90 s for accessories, 30–45 s for posture work.
-- ORDER BY EQUIPMENT: all dumbbell/bench exercises first, then all cable-machine exercises. Never send him back to the dumbbells or benches once he's at the cable machine. Bodyweight moves like chin tucks go at the end. His gym has a single cable machine.
+- ORDER BY EQUIPMENT: all dumbbell/bench exercises first, then the pulldown/row machine (lat pulldown, seated row), then the cable machine. Never send him back to an earlier station. Bodyweight moves like chin tucks go at the end. His gym has a single cable machine, often busy; the pulldown/row machine is a separate machine.
 - No floor exercises (push-ups, floor press) unless his notes ask for them; they're left out of the list below by default.
 - No warm-up section. He warms up with a lighter set or two of each main lift (not logged).
 - Strength focus: main lifts mostly 5–10 reps; accessories 10–15; posture work 12–20.
@@ -141,7 +141,7 @@ Rules for every plan:
 function exerciseCatalog(settings: Settings): string {
   return EXERCISES.filter((e) => plannable(e, settings))
     .map((e) => {
-      const load = e.load === 'dumbbell' ? 'dumbbell, lb per hand' : e.load === 'cable' ? 'cable stack, lb' : 'bodyweight';
+      const load = e.load === 'dumbbell' ? 'dumbbell, lb per hand' : e.load === 'cable' ? 'cable stack, lb' : e.load === 'machine' ? 'pulldown/row machine stack, lb' : 'bodyweight';
       return `${e.id} | ${e.name} | ${e.pattern} | ${load} | reps ${e.repRange[0]}–${e.repRange[1]}${e.holdSeconds ? ` | hold ${e.holdSeconds}s each rep` : ''}`;
     })
     .join('\n');
@@ -194,7 +194,7 @@ function planTool(settings: Settings, withAssessment: boolean) {
         note: { type: 'string', description: '1–2 sentences to the lifter' },
         exercises: {
           type: 'array',
-          description: 'In the order he does them: dumbbell/bench work first, then cable work, chin tucks last.',
+          description: 'In the order he does them: dumbbell/bench work first, then the pulldown/row machine, then cable work, chin tucks last.',
           items: {
             type: 'object',
             required: ['exercise_id', 'sets', 'reps', 'weight', 'rest_seconds'],
@@ -217,6 +217,15 @@ function planTool(settings: Settings, withAssessment: boolean) {
   };
 }
 
+/** Notes he typed during recent workouts, for the coach. */
+function notesText(s: AppState): string {
+  const recent = s.notes.filter((n) => Date.now() - Date.parse(n.at) < 21 * 86_400_000).slice(-12);
+  if (!recent.length) return 'NOTES FROM HIM: none recently.';
+  const fmt = (n: (typeof recent)[number]) =>
+    `- ${new Date(n.at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}${n.where ? ` (${n.where})` : ''}: ${n.text.replace(/\s+/g, ' ')}`;
+  return `NOTES FROM HIM during recent workouts (oldest first). Act on anything about pain, equipment, time, or exercises he likes or dislikes; a pain note means swap or lighten that movement. Ignore notes about the app itself:\n${recent.map(fmt).join('\n')}`;
+}
+
 export async function requestPlan(s: AppState, opts: { target?: ScheduleTarget } = {}): Promise<{ plan: Plan; assessment: Assessment | null }> {
   const target = opts.target ?? scheduleTarget(s);
   const dayType = target.dayType;
@@ -233,9 +242,10 @@ TIME LIMIT: ${settings.sessionMinutes} minutes per workout, everything included.
 EQUIPMENT
 Dumbbells (lb, per hand): ${settings.dumbbells.join(', ')}
 Cable stack: ${settings.cableIncrement} lb steps up to ${settings.cableMax}
+${settings.equipment.pulldown_row ? `Pulldown/seated row machine (Precor, separate from the cable machine, so it's free when the cable machine is taken): ${settings.machineIncrement} lb steps up to ${settings.machineMax}` : 'No pulldown/row machine.'}
 Legs switched ${settings.includeLegs ? 'ON' : 'OFF'}
 
-EXERCISES HE CAN DO (id | name | pattern | load | rep guide) — load tells you the station: dumbbell = benches, cable = the cable machine
+EXERCISES HE CAN DO (id | name | pattern | load | rep guide) — load tells you the station: dumbbell = benches, machine = the pulldown/row machine, cable = the cable machine
 ${exerciseCatalog(settings)}
 
 STATUS
@@ -247,6 +257,7 @@ ${target.intensity === 'light'
   ? 'LIGHT DAY (third+ day in a row): main lifts about 10–15% lighter than his last heavy day, 2–3 more reps, same exercises or close variations. Never heavier than his last heavy-day weight. Keep accessories easy-moderate. The point is practice and recovery, not a test.'
   : 'HEAVY DAY (first or second training day in a row): progress the main lifts from his last HEAVY day for each exercise (ignore light-day weights when progressing).'}
 ${s.assessment ? `Current weak-point notes (${s.assessment.date.slice(0, 10)}): ${s.assessment.text}` : 'No weak-point assessment yet.'}
+${notesText(s)}
 
 POSTURE CHECKS
 ${postureText(s)}

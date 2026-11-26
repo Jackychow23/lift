@@ -20,9 +20,11 @@ export function plannable(ex: Exercise, settings: Settings): boolean {
 export function availableWeights(ex: Exercise, settings: Settings): number[] {
   if (ex.load === 'bodyweight') return [0];
   if (ex.load === 'dumbbell') return [...settings.dumbbells].filter((n) => n > 0).sort((a, b) => a - b);
-  const inc = Math.max(1, settings.cableIncrement);
+  const machine = ex.load === 'machine';
+  const inc = Math.max(1, machine ? settings.machineIncrement : settings.cableIncrement);
+  const max = machine ? settings.machineMax : settings.cableMax;
   const out: number[] = [];
-  for (let w = inc; w <= settings.cableMax + 1e-9; w += inc) out.push(Math.round(w * 10) / 10);
+  for (let w = inc; w <= max + 1e-9; w += inc) out.push(Math.round(w * 10) / 10);
   return out;
 }
 
@@ -68,14 +70,17 @@ export function alternatives(exId: string, settings: Settings, exclude: string[]
   );
 }
 
-// ───────── stations: dumbbells/bench vs the cable machine ─────────
+// ───────── stations: dumbbells/bench, the pulldown/row machine, the cable machine ─────────
 
-export type Station = 'dumbbells' | 'cable' | 'anywhere';
+export type Station = 'dumbbells' | 'machine' | 'cable' | 'anywhere';
 
 export const station = (ex: Exercise | undefined): Station =>
-  !ex ? 'anywhere' : ex.load === 'cable' ? 'cable' : ex.load === 'dumbbell' ? 'dumbbells' : 'anywhere';
+  !ex ? 'anywhere' : ex.load === 'cable' ? 'cable' : ex.load === 'machine' ? 'machine' : ex.load === 'dumbbell' ? 'dumbbells' : 'anywhere';
 
-export const STATION_LABEL: Record<Station, string> = { dumbbells: 'Dumbbells', cable: 'Cable machine', anywhere: 'No equipment' };
+export const STATION_LABEL: Record<Station, string> = { dumbbells: 'Dumbbells', machine: 'Pulldown/row machine', cable: 'Cable machine', anywhere: 'No equipment' };
+
+/** Walking order: benches, then the pulldown/row machine, then the (often busy) cable machine. */
+const STATION_RANK: Record<Station, number> = { dumbbells: 0, machine: 1, cable: 2, anywhere: 0 };
 
 /** The equipment a group of exercises shares, or null if they'd need two stations. */
 export function sharedStation(ids: string[]): Station | null {
@@ -182,8 +187,8 @@ export function fitToTime(blocks: PlanBlock[], limitSeconds: number): PlanBlock[
 }
 
 /**
- * Do all the dumbbell/bench work first, then everything at the cable machine, so he never
- * walks back to the benches. Bodyweight moves stay with whatever comes before them.
+ * Do all the dumbbell/bench work first, then the pulldown/row machine, then the cable machine,
+ * so he never walks back. Bodyweight moves stay with whatever comes before them.
  */
 export function orderByStation(blocks: PlanBlock[]): PlanBlock[] {
   let prev: Station = 'dumbbells';
@@ -192,7 +197,7 @@ export function orderByStation(blocks: PlanBlock[]): PlanBlock[] {
       const st = sharedStation(b.items.map((x) => x.exerciseId)) ?? 'cable';
       const eff = st === 'anywhere' ? prev : st;
       prev = eff;
-      return { b, i, r: eff === 'cable' ? 1 : 0 };
+      return { b, i, r: STATION_RANK[eff] };
     })
     .sort((x, y) => x.r - y.r || x.i - y.i)
     .map((x) => x.b);
@@ -405,7 +410,7 @@ export function scheduleTarget(s: AppState, now = new Date()): ScheduleTarget {
  */
 export function catchUpTarget(s: AppState, now = new Date()): ScheduleTarget | null {
   const ws = weekStart(now);
-  if (scheduleTarget(s, now).weekOf === isoDate(ws)) return null;
+  if (s.skipCatchUpWeek === isoDate(ws) || scheduleTarget(s, now).weekOf === isoDate(ws)) return null;
   const slots = weekSlots(s.settings.trainingDays);
   const regs = finished(s).filter((x) => !x.bonus && sameWeek(new Date(x.finishedAt!), now));
   // Only for a week he's actually been training (not a fresh start mid-week), and not twice in one day.

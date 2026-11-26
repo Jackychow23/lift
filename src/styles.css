@@ -114,6 +114,14 @@ a { color: var(--accent); }
 .flash { display: flex; flex-direction: column; gap: 12px; padding: 18px; background: var(--card-2); border: 1px solid var(--line); border-radius: 18px; }
 .flash .prompt { margin: 0; font-family: var(--display); font-size: 25px; font-weight: 600; line-height: 1.25; }
 .flash .prompt mark { background: none; color: var(--info); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.speak-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; min-width: 44px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--raised); color: var(--info); font-size: 14px; font-weight: 600; flex: none; }
+.speak-btn:active { background: var(--card); }
+.prompt-row { display: flex; align-items: flex-start; gap: 10px; }
+.prompt-row .prompt { flex: 1; }
+.notes textarea { min-height: 64px; resize: vertical; }
+.note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
+.note p { margin: 0; white-space: pre-wrap; line-height: 1.45; font-size: 15px; }
+.note .small { display: block; margin-top: 4px; }
 .opt { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 50px; padding: 8px 16px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--raised); font-size: 16px; font-weight: 500; text-align: left; width: 100%; }
 .opt.right { background: var(--good-soft); border-color: var(--good); }
 .opt.wrong { background: var(--bad-soft); border-color: var(--bad); }

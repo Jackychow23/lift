@@ -3,6 +3,7 @@ import type { Nav } from '../App';
 import { IconBack, IconCheck, IconPlay, IconPlus, IconSwap } from '../components/Icons';
 import NumInput from '../components/NumInput';
 import HoldTimer from '../components/HoldTimer';
+import NotesPanel from '../components/NotesPanel';
 import RestOverlay from '../components/RestOverlay';
 import Sheet from '../components/Sheet';
 import { EXERCISE_BY_ID } from '../data/exercises';
@@ -278,6 +279,19 @@ export default function Workout({ nav }: { nav: Nav }) {
           Numbers start at today's target. Did more or fewer? Change them, then tap the check. Extra sets are fine.
         </p>
         <button type="button" className="btn big" onClick={() => setConfirm('finish')}>Finish workout</button>
+
+        <section className="card stack" aria-label="Notes">
+          <span style={{ fontSize: 15, fontWeight: 600 }}>Notes</span>
+          <NotesPanel
+            sessionId={session.id}
+            where={
+              pointer
+                ? `${session.title} · ${EXERCISE_BY_ID[session.exercises[pointer.ex].exerciseId]?.name ?? session.exercises[pointer.ex].exerciseId}, set ${pointer.set + 1}`
+                : `${session.title} · after the last set`
+            }
+            filter={(n) => n.sessionId === session.id || !n.sentAt}
+          />
+        </section>
       </div>
 
       {session.rest && session.rest.endsAt > now - 10 * 60_000 && (
@@ -323,7 +337,7 @@ export default function Workout({ nav }: { nav: Nav }) {
           <p className="small" style={{ margin: 0 }}>Station busy or something feels off? Pick a stand-in that works the same muscles.</p>
           {(() => {
             const alts = alternatives(session.exercises[swapFor].exerciseId, state.settings, session.exercises.map((e) => e.exerciseId));
-            const groups = (['cable', 'dumbbells', 'anywhere'] as const).map((st) => ({ st, list: alts.filter((a) => station(a) === st) })).filter((g) => g.list.length);
+            const groups = (['cable', 'machine', 'dumbbells', 'anywhere'] as const).map((st) => ({ st, list: alts.filter((a) => station(a) === st) })).filter((g) => g.list.length);
             return groups.map((g) => (
               <div key={g.st} className="stack">
                 <span className="label">{GROUP_LABEL[g.st]}</span>

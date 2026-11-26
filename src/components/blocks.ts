@@ -13,7 +13,7 @@ export interface BlockView {
   posture: boolean;
 }
 
-export const GROUP_LABEL: Record<Station, string> = { dumbbells: 'Dumbbells & bench', cable: 'Cable machine', anywhere: 'No equipment' };
+export const GROUP_LABEL: Record<Station, string> = { dumbbells: 'Dumbbells & bench', machine: 'Pulldown/row machine', cable: 'Cable machine', anywhere: 'No equipment' };
 
 /** Numbering and equipment groups for a workout: 1, 2 at the dumbbells; 3, 4, 5 at the cable machine… */
 export function describeBlocks(blocks: { kind: BlockKind; ids: string[] }[]): BlockView[] {

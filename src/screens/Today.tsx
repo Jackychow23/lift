@@ -121,9 +121,14 @@ export default function Today({ nav }: { nav: Nav }) {
             </strong>{' '}
             now, or rest; Monday starts fresh either way.
           </p>
-          <button type="button" className="btn outline-accent" onClick={startCatchUp}>
-            Start catch-up workout
-          </button>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn outline-accent" onClick={startCatchUp}>
+              Start catch-up workout
+            </button>
+            <button type="button" className="btn ghost" onClick={() => update((s) => ({ ...s, skipCatchUpWeek: catchUp.weekOf }))}>
+              Not this week
+            </button>
+          </div>
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EXERCISE_BY_ID, EXERCISES } from '../data/exercises';
 import { BASE_DECK } from '../data/spanish';
 import { freshState, migrate } from './defaults';
@@ -12,6 +12,7 @@ import {
   weekSlots,
   estimateSeconds,
   remainingSeconds,
+  availableWeights,
   cableSwap,
   nextSet,
   nextTarget,
@@ -24,6 +25,8 @@ import {
 } from './planner';
 import { answer, buildQuestion, maskAnswer, stripArticle, cleanStories, contextsFor, findHighlight, nextQuestion, pickCard, stats } from './srs';
 import type { AppState, Session } from './types';
+import { NoteSetupError, noteIssue, sendNote } from './notes';
+import { exportJson } from './storage';
 
 // Week of Monday 16 Nov 2026, local time.
 const at = (day: number, hour = 9) => new Date(2026, 10, 16 + day, hour, 0, 0);
@@ -326,6 +329,7 @@ describe('weekly schedule', () => {
     expect(catchUpTarget(s, at(3, 20))).toBeNull();
     const c = catchUpTarget(s, at(4))!;
     expect([c.slot, c.dayType, c.intensity, c.date]).toEqual([3, 'B', 'heavy', '2026-11-20']);
+    expect(catchUpTarget({ ...s, skipCatchUpWeek: '2026-11-16' }, at(4))).toBeNull();
     s = train(s, at(4));
     expect(catchUpTarget(s, at(5))).toBeNull();
     expect(weekInfo(s, at(5)).bonusAvailable).toBe(true);
@@ -390,6 +394,88 @@ describe('weekly schedule', () => {
     expect(p.blocks[0].items[0].weight).toBe(30);
     const heavy = sanitizePlan({ title: 'A', focus: '', note: '', exercises: [{ exercise_id: 'db_bench_press', sets: 3, reps: 8, weight: 50 }] }, s, scheduleTarget(s, at(7, 7)));
     expect(heavy.blocks[0].items[0].weight).toBeLessThanOrEqual(40);
+  });
+});
+
+describe('pulldown/row machine', () => {
+  it('lat pulldown and seated row use the Precor machine: 5 lb steps up to 225', () => {
+    const s = freshState();
+    for (const id of ['lat_pulldown', 'seated_cable_row']) {
+      const ex = EXERCISE_BY_ID[id];
+      expect(station(ex)).toBe('machine');
+      expect(availableWeights(ex, s.settings).slice(0, 3)).toEqual([5, 10, 15]);
+      expect(availableWeights(ex, s.settings).at(-1)).toBe(225);
+    }
+  });
+
+  it('goes benches → machine → cable, and "cable taken" leaves the machine alone', () => {
+    const s = freshState();
+    const p = buildBuiltinPlan(s, 'B');
+    const st = p.blocks.map((b) => station(EXERCISE_BY_ID[b.items[0].exerciseId])).filter((x) => x !== 'anywhere');
+    expect(st).toEqual([...st].sort((a, b) => ['dumbbells', 'machine', 'cable'].indexOf(a) - ['dumbbells', 'machine', 'cable'].indexOf(b)));
+    expect(st).toContain('machine');
+    const sess = startSession(p);
+    const on = cableSwap(sess, s.settings, [], true, true);
+    expect(on.session.exercises.map((e) => e.exerciseId)).toEqual(expect.arrayContaining(['lat_pulldown', 'seated_cable_row']));
+  });
+
+  it('without the machine, pulldowns and rows get stand-ins', () => {
+    const s = freshState();
+    s.settings.equipment.pulldown_row = false;
+    const ids = buildBuiltinPlan(s, 'B').blocks.map((b) => b.items[0].exerciseId);
+    expect(ids).not.toContain('lat_pulldown');
+    expect(ids).not.toContain('seated_cable_row');
+    expect(ids.some((id) => EXERCISE_BY_ID[id].pattern === 'v_pull')).toBe(true);
+  });
+});
+
+describe('notes', () => {
+  const note = { id: 'n1', text: 'Left shoulder pinched on the overhead press, dropped to 30s and it was fine', at: '2026-11-25T18:00:00Z', where: 'Upper B · Dumbbell Shoulder Press, set 2' };
+
+  it('become a short issue title with the full text and context in the body', () => {
+    const { title, body } = noteIssue(note);
+    expect(title.startsWith('Note: Left shoulder pinched')).toBe(true);
+    expect(title.length).toBeLessThanOrEqual(76);
+    expect(body).toContain(note.text);
+    expect(body).toContain(note.where);
+  });
+
+  it('send with the token, and explain setup problems in plain words', async () => {
+    const s = freshState();
+    s.settings.githubToken = 'github_pat_test';
+    const repo = (priv: boolean) => new Response(JSON.stringify({ private: priv, has_issues: true, full_name: 'Jackychow23/lift-notes' }), { status: 200 });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(repo(true))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ html_url: 'https://github.com/Jackychow23/lift-notes/issues/1' }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await sendNote(note, s.settings)).toBe('https://github.com/Jackychow23/lift-notes/issues/1');
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(url).toBe('https://api.github.com/repos/Jackychow23/lift-notes/issues');
+    expect(init.headers.Authorization).toBe('Bearer github_pat_test');
+    // Notes can be personal: never to a public repo.
+    s.settings.githubRepo = 'Jackychow23/lift';
+    fetchMock.mockResolvedValueOnce(repo(false));
+    await expect(sendNote(note, s.settings)).rejects.toThrow(/public/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    s.settings.githubRepo = 'Jackychow23/lift-notes';
+    s.settings.githubToken = 'github_pat_other';
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 401 }));
+    await expect(sendNote(note, s.settings)).rejects.toBeInstanceOf(NoteSetupError);
+    s.settings.githubToken = 'github_pat_test'; // already checked: goes straight to the POST
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await expect(sendNote(note, s.settings)).rejects.not.toBeInstanceOf(NoteSetupError);
+    vi.unstubAllGlobals();
+  });
+
+  it('the GitHub token, like the Claude key, never goes into a backup', () => {
+    const s = freshState();
+    s.settings.apiKey = 'sk-ant-x';
+    s.settings.githubToken = 'github_pat_x';
+    const out = exportJson(s);
+    expect(out).not.toContain('github_pat_x');
+    expect(out).not.toContain('sk-ant-x');
+    expect(migrate({ settings: {}, sessions: [] }).notes).toEqual([]);
   });
 });
 

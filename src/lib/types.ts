@@ -10,8 +10,8 @@ export type Pattern =
   | 'posture' // neck + upper back + rear shoulder work
   | 'hinge'; // hip hinge (legs) — only used when legs are switched on
 
-/** dumbbell = weight per hand; cable = stack weight; bodyweight = reps only */
-export type Load = 'dumbbell' | 'cable' | 'bodyweight';
+/** dumbbell = weight per hand; cable = cable machine stack; machine = pulldown/row machine stack; bodyweight = reps only */
+export type Load = 'dumbbell' | 'cable' | 'machine' | 'bodyweight';
 
 export type EquipmentKey =
   | 'flat_bench'
@@ -20,7 +20,8 @@ export type EquipmentKey =
   | 'lat_bar'
   | 'v_bar'
   | 'd_handle'
-  | 'straight_bar';
+  | 'straight_bar'
+  | 'pulldown_row';
 
 export interface Exercise {
   id: string;
@@ -139,6 +140,9 @@ export interface Settings {
   dumbbells: number[];
   cableIncrement: number;
   cableMax: number;
+  /** The Precor pulldown/seated row machine: 10 lb plates plus a 5 lb add-on lever. */
+  machineIncrement: number;
+  machineMax: number;
   equipment: Record<EquipmentKey, boolean>;
   includeLegs: boolean;
   /** Push-ups, floor press: off by default. */
@@ -154,6 +158,24 @@ export interface Settings {
   aboutMe: string;
   /** What the Spanish cards and stories should be about. Claude reads it when writing new ones. */
   spanishFocus: string;
+  /** GitHub token (Issues: read and write on one repo) for sending notes. Stays on this phone. */
+  githubToken: string;
+  /** owner/repo the notes go to as issues. */
+  githubRepo: string;
+}
+
+/** A note typed during a workout. Saved right away; sent as a GitHub issue once online. */
+export interface Note {
+  id: string;
+  text: string;
+  at: string;
+  sessionId?: string;
+  /** Where he was, e.g. "Upper B · Lat Pulldown, set 2". */
+  where?: string;
+  sentAt?: string;
+  url?: string;
+  /** Last problem sending it (bad token, etc.). Network trouble just waits. */
+  error?: string;
 }
 
 export interface SpanishCard {
@@ -226,4 +248,7 @@ export interface AppState {
   assessment: Assessment | null;
   spanish: SpanishState;
   claude: { lastError: string | null; lastSuccess: string | null };
+  notes: Note[];
+  /** Week (Monday's date) whose catch-up workout he turned down. */
+  skipCatchUpWeek?: string;
 }

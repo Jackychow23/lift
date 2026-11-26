@@ -41,16 +41,17 @@ export async function requestPersistence(): Promise<boolean> {
   }
 }
 
-/** Backup file without the API key. */
+/** Backup file without the API key or GitHub token. */
 export function exportJson(state: AppState): string {
-  const copy: AppState = { ...state, settings: { ...state.settings, apiKey: '' } };
+  const copy: AppState = { ...state, settings: { ...state.settings, apiKey: '', githubToken: '' } };
   return JSON.stringify(copy, null, 2);
 }
 
-export function importJson(text: string, keepApiKey: string): AppState {
+export function importJson(text: string, keepApiKey: string, keepGithubToken = ''): AppState {
   const parsed = JSON.parse(text);
   if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.sessions)) throw new Error("That file doesn't look like a Lift backup.");
   const s = migrate(parsed);
   s.settings.apiKey = s.settings.apiKey || keepApiKey;
+  s.settings.githubToken = s.settings.githubToken || keepGithubToken;
   return s;
 }

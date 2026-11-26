@@ -48,12 +48,20 @@ The key stays on the phone. It's never put in backups and never sent anywhere ex
   - Friday: optional; the weekend is rest
 
   Pick other days in **Settings → Training days**. Heavy/light follows the days you actually train in a row, so a rest day makes the next one heavy again. Progression only counts heavy days.
-- **Missed a day:** the next training day picks up where you left off (miss Wednesday and Thursday gets Wednesday's workout). If one is still left when the week's days run out, Friday–Sunday offers it as an optional catch-up. Every Monday starts a fresh week. The strip on the Today screen shows the week: ✓ done, the next workout highlighted, then what's planned (L = light).
+- **Missed a day:** the next training day picks up where you left off (miss Wednesday and Thursday gets Wednesday's workout). If one is still left when the week's days run out, Friday–Sunday offers it as an optional catch-up (tap **Not this week** to hide it, e.g. when travelling). Every Monday starts a fresh week. The strip on the Today screen shows the week: ✓ done, the next workout highlighted, then what's planned (L = light).
 - **Time limit:** every plan is built to fit **Settings → Workout length** (30 min by default), counting set-up, your warm-up sets, each set and the rests; accessories are cut first if it won't fit. During a workout the top bar shows time left, and a note appears if you're running long.
 - **One exercise at a time:** finish all sets of an exercise, then move on. The rests are longer (about 2½ min for main lifts, 75 s for accessories, 30–45 s for posture work), which is time for the Spanish cards.
-- **Equipment order:** all the dumbbell/bench work comes first, then everything at the cable machine, so you never walk back to the benches. Claude's plans are put in that order too.
+- **Equipment order:** dumbbell/bench work first, then the pulldown/row machine (lat pulldown, seated row), then the cable machine, so you never walk back. Claude's plans are put in that order too.
+- **Pulldown/row machine:** the Precor pulldown/seated row machine is its own station with its own weights (5 lb steps up to 225 by default: 10 lb plates plus the 5 lb add-on lever). Change them, or turn the machine off, in **Settings → Gym equipment**.
 - **Swapping:** the swap list always shows cable options first, then dumbbell ones. Floor work (push-ups, floor press) is left out unless you switch it on in Settings.
-- **Cable machine taken:** one button in the workout swaps every cable exercise you haven't started for a dumbbell one. Tap it again to swap back.
+- **Cable machine taken:** one button in the workout swaps every cable exercise you haven't started for a dumbbell one (the pulldown/row machine is separate, so it stays). Tap it again to swap back.
+- **Notes:** at the bottom of the workout screen. A note is saved on the phone right away, tagged with the exercise and set you were on. The coach reads recent notes when it writes the next plan (pain → it swaps or lightens that movement). Notes can also be sent to a **private** GitHub repo (default `Jackychow23/lift-notes`) as issues, as soon as the phone is online, so Claude in chat can read them. This repo is public, so notes never go here: the app refuses a public repo. Setup, once:
+  1. Create a private repo named `lift-notes` (github.com/new → Private).
+  2. Make a fine-grained token (github.com/settings/personal-access-tokens/new): only `lift-notes`, permission **Issues: Read and write**.
+  3. Paste it in **Settings → Notes** and tap **Test**. The token stays on the phone and is left out of backups.
+  4. For Claude in chat to read the notes, give the Claude GitHub app access to `lift-notes` too.
+
+  **Copy recent notes** in Settings copies them for pasting into a chat without any of this.
 - **Timed holds (chin tucks):** tap the check (or “Start set … with the hold timer”). In Automatic mode you tap Start once: one buzz = hold, two buzzes = relax, and it counts the reps and logs the set. “Tap each rep” starts each hold when you tap instead.
 - **Rest screen:** besides the Spanish card, it has buttons for the form notes of the exercise you just did and the next one.
 - **Bonus day:** once the week's workouts are done, an optional bonus repeats that week's weakest workout with the same targets.
@@ -77,6 +85,7 @@ The key stays on the phone. It's never put in backups and never sent anywhere ex
 - Every few cards, a 2–3 sentence mini-story (written by Claude from words you know, saved for offline) checks real reading.
 - Missed cards come back within minutes; known ones come back days or weeks later.
 - New words arrive only while recent accuracy is good.
+- **Hear it:** the speaker button reads the Spanish out loud with the phone's own voice (tap again for slower). Before answering it's there for the word and sentence questions (not fill-in-the-blank, which would give it away); after answering, for the word and the sentence. It works offline once a Spanish voice is installed on the phone: **Settings → General management → Text-to-speech** → the engine's settings → install Spanish (Mexico or US). **Settings → Rest timer + Spanish** shows which voice it's using and has a Test button.
 - Cards move on from "what does this word mean" to "what does this sentence mean" to "how do you say it in Spanish".
 - When the built-in deck of 126 cards runs low, Claude writes new ones at your level.
 
@@ -86,7 +95,8 @@ The key stays on the phone. It's never put in backups and never sent anywhere ex
 |---|---|
 | Goals, likes/dislikes, injuries (what Claude reads) | In the app: **Settings → About me** |
 | Training days | In the app: **Settings → Training days** |
-| Dumbbells, cable steps, attachments, legs on/off | In the app: **Settings → Gym equipment** |
+| Dumbbells, cable and machine steps, attachments, legs on/off | In the app: **Settings → Gym equipment** |
+| Where notes are sent | In the app: **Settings → Notes** |
 | Exercises, how-to notes, "feel it here / not here" | `src/data/exercises.ts` (photos go in `public/exercises/<id>/0.webp` and `1.webp`) |
 | Spanish starter deck | `src/data/spanish.ts` |
 | Built-in A/B workouts, weekly schedule, light-day rules, progression, safety rails | `src/lib/planner.ts` |

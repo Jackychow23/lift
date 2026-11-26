@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { answer, markStory, nextQuestion, nextStory, stats, type Question } from '../lib/srs';
 import { useStore } from '../lib/store';
+import SpeakButton from './SpeakButton';
 import type { SpanishState, Story } from '../lib/types';
 
 // Remembered across rest periods within a session.
@@ -72,7 +73,10 @@ export default function Flashcard() {
     return (
       <section className="flash" aria-label="Spanish mini-story">
         {header('Mini-story')}
-        <p className="body" lang="es" style={{ fontSize: 19, lineHeight: 1.5 }}>{s.es}</p>
+        <div className="prompt-row">
+          <p className="body" lang="es" style={{ fontSize: 19, lineHeight: 1.5, flex: 1 }}>{s.es}</p>
+          <SpeakButton text={s.es} />
+        </div>
         {s.gloss.length > 0 && (
           <p className="small" style={{ margin: 0 }}>
             New: {s.gloss.map((g) => `${g.es} = ${g.en}`).join(' · ')}
@@ -101,17 +105,21 @@ export default function Flashcard() {
   return (
     <section className="flash" aria-label="Spanish flashcard">
       {header(`Español · Level ${st.level}`)}
-      <p className="prompt" lang={q.promptLang}>
-        {q.highlight ? (
-          <>
-            {q.highlight[0]}
-            {q.mode === 'cloze' && !answered ? <span className="blank" aria-label="blank">_____</span> : <mark>{q.highlight[1]}</mark>}
-            {q.highlight[2]}
-          </>
-        ) : (
-          q.prompt
-        )}
-      </p>
+      <div className="prompt-row">
+        <p className="prompt" lang={q.promptLang}>
+          {q.highlight ? (
+            <>
+              {q.highlight[0]}
+              {q.mode === 'cloze' && !answered ? <span className="blank" aria-label="blank">_____</span> : <mark>{q.highlight[1]}</mark>}
+              {q.highlight[2]}
+            </>
+          ) : (
+            q.prompt
+          )}
+        </p>
+        {/* Hearing a fill-in-the-blank sentence would give the answer away, so only after answering. */}
+        {q.promptLang === 'es' && (q.mode !== 'cloze' || answered) && <SpeakButton text={q.prompt} />}
+      </div>
       {q.support && <p className="small" style={{ margin: 0, fontSize: 14 }}>{q.support}</p>}
       <p className="sub">{q.question}</p>
       {options(q.options, q.answerIndex, q.optionsLang, pick)}
@@ -122,6 +130,10 @@ export default function Flashcard() {
       {answered && (
         <div className="stack">
           <p className="body" style={{ color: 'var(--text-2)', fontSize: 14 }}>{q.explain}</p>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <SpeakButton text={q.card.word} label={q.card.word} />
+            {q.promptLang !== 'es' && <SpeakButton text={q.context.es} label="Sentence" />}
+          </div>
           {nextBtn}
         </div>
       )}

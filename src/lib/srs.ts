@@ -185,7 +185,7 @@ export function buildQuestion(
     q = {
       card, mode, prompt: context.es, promptLang: 'es', highlight: hl, support: maskAnswer(context.en, card),
       question: 'Which word fills the blank?', optionsLang: 'es', context,
-      explain: `${card.word} = ${card.en}.${hook}`
+      explain: `${card.word} = ${card.en}${/[.?!]$/.test(card.en) ? '' : '.'}${hook}`
     };
   } else if (mode === 'sentence') {
     // English never keeps the Spanish word (colectivo → shared van), or it gives the answer away.
@@ -194,7 +194,7 @@ export function buildQuestion(
     q = {
       card, mode, prompt: context.es, promptLang: 'es', highlight: null, support: null,
       question: 'What does this sentence mean?', optionsLang: 'en', context,
-      explain: `${card.word} = ${card.en}.${hook}`
+      explain: `${card.word} = ${card.en}${/[.?!]$/.test(card.en) ? '' : '.'}${hook}`
     };
   } else if (mode === 'reverse') {
     correct = card.word;
@@ -210,7 +210,7 @@ export function buildQuestion(
     q = {
       card, mode: 'word', prompt: context.es, promptLang: 'es', highlight: hl, support: null,
       question: `What does “${card.word}” mean?`, optionsLang: 'en', context,
-      explain: `${card.word} = ${card.en}. “${context.es}” means “${maskAnswer(context.en, card)}”.${hook}`
+      explain: `${card.word} = ${card.en}${/[.?!]$/.test(card.en) ? '' : '.'} “${context.es}” means “${maskAnswer(context.en, card)}”.${hook}`
     };
   }
   const options = shuffle([correct, ...others], rand);

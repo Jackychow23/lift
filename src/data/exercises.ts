@@ -326,15 +326,15 @@ export const EXERCISES: Exercise[] = [
   // ───────── Horizontal pull ─────────
   {
     id: 'seated_cable_row',
-    name: 'Seated Cable Row',
+    name: 'Seated Row (machine)',
     pattern: 'h_pull',
-    load: 'cable',
-    needs: [],
+    load: 'machine',
+    needs: ['pulldown_row'],
     repRange: [6, 10],
     start: 80,
     images: img('seated_cable_row'),
     steps: [
-      'Sit tall with a slight bend in the knees, chest up.',
+      'On the pulldown/row machine, use the row position: feet on the foot bar, slight bend in the knees, sit tall with your chest up.',
       'Pull the handle to your lower ribs, driving your elbows back and squeezing your shoulder blades together.',
       'Let your arms straighten and your shoulder blades open forward without rounding your back.'
     ],
@@ -432,8 +432,8 @@ export const EXERCISES: Exercise[] = [
     id: 'lat_pulldown',
     name: 'Lat Pulldown',
     pattern: 'v_pull',
-    load: 'cable',
-    needs: ['lat_bar'],
+    load: 'machine',
+    needs: ['pulldown_row'],
     repRange: [6, 10],
     start: 80,
     images: img('lat_pulldown'),
@@ -441,7 +441,8 @@ export const EXERCISES: Exercise[] = [
       'Grip the bar a bit wider than your shoulders, thighs under the pad.',
       'Lean back slightly, chest up.',
       'Pull the bar to your upper chest, driving elbows down toward your back pockets.',
-      'Let the bar rise until your arms are straight.'
+      'Let the bar rise until your arms are straight.',
+      'For a 5 lb jump between plates, use the add-on lever by the stack.'
     ],
     feel: { main: ['Lats (sides of the back)'], also: ['Biceps', 'Middle back'] },
     notFeel: [
